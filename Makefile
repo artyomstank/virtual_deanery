@@ -46,10 +46,10 @@ docker-build: ## Build Docker image
 	docker build -f build/package/Dockerfile -t $(DOCKER_IMAGE) .
 
 docker-up: ## Start services with docker-compose
-	docker-compose -f deployments/docker-compose.yml up -d
+	docker-compose -f docker-compose.yml up -d
 
 docker-down: ## Stop services with docker-compose
-	docker-compose -f deployments/docker-compose.yml down
+	docker-compose -f docker-compose.yml down
 
 migrate-up: ## Run migrations up
 	# TODO: Use migrate tool or custom script

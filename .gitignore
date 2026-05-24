@@ -16,3 +16,5 @@ node_modules/
 coverage.out
 *.prof
 go.sum
+DEPLOYMENT.md
+PROJECT_STRUCTURE.md

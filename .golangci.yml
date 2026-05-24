@@ -31,7 +31,7 @@ linters-settings:
   govet:
     check-shadowing: true
   goimports:
-    local-prefixes: github.com/artyomstank/go_auth_template
+    local-prefixes: github.com/artyomstank/virtual_deanery
 
 issues:
   exclude-rules:

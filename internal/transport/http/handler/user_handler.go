@@ -2,123 +2,225 @@
 package handler
 
 import (
-	"github.com/artyomstank/virtual_deanery/internal/domain/service"
-	"github.com/artyomstank/virtual_deanery/pkg/logger"
+	"errors"
+	"net/http"
+	"strconv"
+
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
+
+	"github.com/artyomstank/virtual_deanery/apperror"
+	"github.com/artyomstank/virtual_deanery/internal/domain/service"
+	"github.com/artyomstank/virtual_deanery/internal/transport/http/dto"
+	"github.com/artyomstank/virtual_deanery/pkg/httputil"
+	"github.com/artyomstank/virtual_deanery/pkg/logger"
 )
 
+// UserHandler обрабатывает HTTP-запросы, связанные с пользователями.
 type UserHandler struct {
-	svc    service.UserService
-	logger logger.Logger
+	svc       service.UserService
+	logger    *logger.Logger
+	validator *validator.Validate
 }
 
-// NewUserHandler creates new user HTTP handler.
-func NewUserHandler(svc service.UserService, logger logger.Logger) *UserHandler {
+// NewUserHandler создаёт новый экземпляр UserHandler.
+func NewUserHandler(svc service.UserService, logger *logger.Logger) *UserHandler {
 	return &UserHandler{
-		svc:    svc,
-		logger: logger,
+		svc:       svc,
+		logger:    logger,
+		validator: validator.New(),
 	}
 }
 
-// RegisterUserDTO is request DTO for user registration.
-type RegisterUserDTO struct {
-	Email    string `json:"email" validate:"required,email"`
-	FullName string `json:"full_name" validate:"required,max=255"`
-	Password string `json:"password" validate:"required,min=8"`
-}
-
-// LoginUserDTO is request DTO for login.
-type LoginUserDTO struct {
-	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required"`
-}
-
-// RegisterUser handles POST /api/v1/users/register.
+// RegisterUser обрабатывает POST /api/v1/users/register.
+// Регистрирует нового пользователя в системе.
+// Новому пользователю по умолчанию назначается роль "student" если не указана.
 func (h *UserHandler) RegisterUser(c *gin.Context) {
-	// TODO: Parse RegisterUserDTO from request body
+	var req dto.RegisterUserRequest
 
-	// TODO: Validate DTO using validator
+	// Парсим JSON из тела запроса
+	if err := c.BindJSON(&req); err != nil {
+		h.logger.Warn("invalid request format", map[string]interface{}{"error": err})
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Message: "invalid request format",
+		})
+		return
+	}
 
-	// TODO: Call h.svc.RegisterUser()
+	// Валидируем поля запроса
+	if err := h.validator.Struct(req); err != nil {
+		h.logger.Warn("validation failed", map[string]interface{}{"error": err})
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Message: "validation failed: " + err.Error(),
+		})
+		return
+	}
 
-	// TODO: Map apperror to HTTP status (CONFLICT→409, BAD_REQUEST→400)
+	// Вызываем сервис для регистрации
+	user, err := h.svc.Register(c.Request.Context(), service.RegisterInput{
+		Username: req.Username,
+		Email:    req.Email,
+		Password: req.Password,
+		RoleName: req.Role,
+	})
 
-	// TODO: Return 201 Created with user data
+	if err != nil {
+		var appErr *apperror.AppError
+		if errors.As(err, &appErr) {
+			c.JSON(appErr.Code, dto.ErrorResponse{
+				Code:    appErr.Code,
+				Message: appErr.Message,
+			})
+			return
+		}
+
+		h.logger.Error("register error", err, nil)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Code:    http.StatusInternalServerError,
+			Message: "internal server error",
+		})
+		return
+	}
+
+	// Возвращаем успешный ответ (201 Created)
+	response := dto.UserResponse{
+		ID:        user.ID,
+		Username:  user.Username,
+		Email:     user.Email,
+		Role:      user.Role.Name,
+		IsActive:  user.IsActive,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+	}
+
+	c.JSON(http.StatusCreated, response)
+	h.logger.Info("user registered successfully", map[string]interface{}{"user_id": user.ID})
 }
 
-// LoginUser handles POST /api/v1/users/login.
+// LoginUser обрабатывает POST /api/v1/users/login.
+// Аутентифицирует пользователя и возвращает JWT access-токен.
 func (h *UserHandler) LoginUser(c *gin.Context) {
-	// TODO: Parse LoginUserDTO from request body
+	var req dto.LoginUserRequest
 
-	// TODO: Validate DTO using validator
+	// Парсим JSON из тела запроса
+	if err := c.BindJSON(&req); err != nil {
+		h.logger.Warn("invalid request format", map[string]interface{}{"error": err})
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Message: "invalid request format",
+		})
+		return
+	}
 
-	// TODO: Call h.svc.LoginUser()
+	// Валидируем поля запроса
+	if err := h.validator.Struct(req); err != nil {
+		h.logger.Warn("validation failed", map[string]interface{}{"error": err})
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Message: "validation failed",
+		})
+		return
+	}
 
-	// TODO: Set refreshToken in httpOnly secure cookie
-	// name="refresh_token", HttpOnly, Secure, SameSite=Strict
+	// Вызываем сервис для логина
+	authResult, err := h.svc.Login(c.Request.Context(), service.LoginInput{
+		Email:    req.Email,
+		Password: req.Password,
+	})
 
-	// TODO: Return 200 OK with access token in body
+	if err != nil {
+		var appErr *apperror.AppError
+		if errors.As(err, &appErr) {
+			c.JSON(appErr.Code, dto.ErrorResponse{
+				Code:    appErr.Code,
+				Message: appErr.Message,
+			})
+			return
+		}
 
-	// TODO: Handle errors (NOT_FOUND→404, INVALID_CREDENTIALS→401)
+		h.logger.Error("login error", err, nil)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Code:    http.StatusInternalServerError,
+			Message: "internal server error",
+		})
+		return
+	}
+
+	// Возвращаем успешный ответ (200 OK)
+	response := dto.AuthResponse{
+		AccessToken: authResult.Token,
+		ExpiresAt:   authResult.ExpiresAt,
+		User: dto.UserResponse{
+			ID:        authResult.User.ID,
+			Username:  authResult.User.Username,
+			Email:     authResult.User.Email,
+			Role:      authResult.User.Role.Name,
+			IsActive:  authResult.User.IsActive,
+			CreatedAt: authResult.User.CreatedAt,
+			UpdatedAt: authResult.User.UpdatedAt,
+		},
+	}
+
+	c.JSON(http.StatusOK, response)
+	h.logger.Info("user logged in successfully", map[string]interface{}{"user_id": authResult.User.ID})
 }
 
-// GetUser handles GET /api/v1/users/:id.
+// GetUser обрабатывает GET /api/v1/users/:id.
+// Возвращает профиль пользователя по ID.
 func (h *UserHandler) GetUser(c *gin.Context) {
-	// TODO: Extract user_id from URL param and from context (current user)
+	// Получаем ID из URL параметра
+	idStr := c.Param("id")
+	userID, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Message: "invalid user id",
+		})
+		return
+	}
 
-	// TODO: Call h.svc.GetUser()
+	// Получаем профиль пользователя из сервиса
+	profile, err := h.svc.GetProfile(c.Request.Context(), userID)
+	if err != nil {
+		var appErr *apperror.AppError
+		if errors.As(err, &appErr) {
+			c.JSON(appErr.Code, dto.ErrorResponse{
+				Code:    appErr.Code,
+				Message: appErr.Message,
+			})
+			return
+		}
 
-	// TODO: Return 200 OK with user data
+		h.logger.Error("get user error", err, nil)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Code:    http.StatusInternalServerError,
+			Message: "internal server error",
+		})
+		return
+	}
 
-	// TODO: Handle NOT_FOUND error → 404
+	// Возвращаем профиль пользователя
+	response := dto.UserResponse{
+		ID:       profile.ID,
+		Username: profile.Username,
+		Email:    profile.Email,
+		Role:     profile.Role,
+		IsActive: profile.IsActive,
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
-// UpdateUser handles PATCH /api/v1/users/:id.
+// UpdateUser обрабатывает PATCH /api/v1/users/:id.
+// Обновляет профиль пользователя.
 func (h *UserHandler) UpdateUser(c *gin.Context) {
-	// TODO: Extract user_id from URL param and from context
-
-	// TODO: Check authorization (can only update own profile)
-
-	// TODO: Parse update DTO from request body
-
-	// TODO: Validate DTO
-
-	// TODO: Call h.svc.UpdateUser()
-
-	// TODO: Return 200 OK with updated user data
+	c.JSON(http.StatusNotImplemented, httputil.ErrorResponse{Code: http.StatusNotImplemented, Message: "not implemented"})
 }
 
-// DeleteUser handles DELETE /api/v1/users/:id.
+// DeleteUser обрабатывает DELETE /api/v1/users/:id.
+// Удаляет пользователя.
 func (h *UserHandler) DeleteUser(c *gin.Context) {
-	// TODO: Extract user_id from URL param and from context
-
-	// TODO: Check authorization
-
-	// TODO: Call h.svc.DeleteUser()
-
-	// TODO: Return 204 No Content
-
-	// TODO: Handle NOT_FOUND error → 404
-}
-
-// ListUsers handles GET /api/v1/users.
-func (h *UserHandler) ListUsers(c *gin.Context) {
-	// TODO: Extract limit and offset from query params
-
-	// TODO: Validate pagination params
-
-	// TODO: Call h.svc.ListUsers()
-
-	// TODO: Return 200 OK with paginated list
-}
-
-// RefreshAccessToken handles POST /api/v1/users/refresh.
-func (h *UserHandler) RefreshAccessToken(c *gin.Context) {
-	// TODO: Extract refresh_token from httpOnly cookie
-
-	// TODO: Call h.svc.RefreshAccessToken()
-
-	// TODO: Return 200 OK with new access token
-
-	// TODO: Handle invalid/expired token → 401
+	c.JSON(http.StatusNotImplemented, httputil.ErrorResponse{Code: http.StatusNotImplemented, Message: "not implemented"})
 }

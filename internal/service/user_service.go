@@ -3,111 +3,280 @@ package service
 
 import (
 	"context"
-	"errors"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
+	"github.com/artyomstank/virtual_deanery/apperror"
 	"github.com/artyomstank/virtual_deanery/internal/domain/entity"
 	"github.com/artyomstank/virtual_deanery/internal/domain/repository"
+	"github.com/artyomstank/virtual_deanery/internal/domain/service"
 	"github.com/artyomstank/virtual_deanery/pkg/jwt"
 	"github.com/artyomstank/virtual_deanery/pkg/logger"
 )
 
 type userService struct {
-	repo       repository.UserRepository
-	jwtClient  jwt.TokenClient
-	logger     logger.Logger
+	userRepo   repository.UserRepository
+	roleRepo   repository.RoleRepository
+	aclRepo    repository.ACLRepository
+	jwtClient  *jwt.Manager
+	logger     *logger.Logger
 	bcryptCost int
+	aclCache   map[string][]entity.ACLEntry
+	cacheMu    sync.RWMutex
 }
 
-// NewUserService creates new user service.
+// NewUserService создаёт новый экземпляр пользовательского сервиса.
 func NewUserService(
-	repo repository.UserRepository,
-	jwtClient jwt.TokenClient,
-	logger logger.Logger,
+	userRepo repository.UserRepository,
+	roleRepo repository.RoleRepository,
+	aclRepo repository.ACLRepository,
+	jwtClient *jwt.Manager,
+	logger *logger.Logger,
 	bcryptCost int,
-) *userService {
+) service.UserService {
 	return &userService{
-		repo:       repo,
+		userRepo:   userRepo,
+		roleRepo:   roleRepo,
+		aclRepo:    aclRepo,
 		jwtClient:  jwtClient,
 		logger:     logger,
 		bcryptCost: bcryptCost,
+		aclCache:   make(map[string][]entity.ACLEntry),
 	}
 }
 
-// RegisterUser creates new user with hashed password.
-func (s *userService) RegisterUser(ctx context.Context, input *entity.CreateUserInput) (*entity.User, error) {
-	// TODO: Validate input
+// Register регистрирует нового пользователя в системе.
+func (s *userService) Register(ctx context.Context, input service.RegisterInput) (*entity.User, error) {
+	// Валидация входных данных
+	if input.Username == "" || input.Email == "" || input.Password == "" {
+		return nil, apperror.ErrInvalidInput
+	}
 
-	// TODO: Check if user already exists
+	if len(input.Password) < 8 {
+		return nil, apperror.New(apperror.ErrInvalidInput.Code, "password must be at least 8 characters", nil)
+	}
 
-	// TODO: Hash password using bcrypt with cost s.bcryptCost
+	// Если роль не указана, используем "student" по умолчанию
+	if input.RoleName == "" {
+		input.RoleName = "student"
+	}
 
-	// TODO: Create user in repository
+	// Проверяем существование роли
+	role, err := s.roleRepo.GetByName(ctx, input.RoleName)
+	if err != nil {
+		s.logger.Warn("role not found", map[string]interface{}{"role": input.RoleName})
+		return nil, apperror.ErrInvalidInput
+	}
 
-	// TODO: Return user or handle error
-	return nil, errors.New("not implemented")
+	// Проверяем уникальность email
+	_, err = s.userRepo.GetByEmail(ctx, input.Email)
+	if err == nil {
+		return nil, apperror.ErrConflict
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		s.logger.Error("error checking email", nil, map[string]interface{}{"error": err})
+		return nil, apperror.ErrInternal
+	}
+
+	// Проверяем уникальность username
+	_, err = s.userRepo.GetByUsername(ctx, input.Username)
+	if err == nil {
+		return nil, apperror.ErrConflict
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		s.logger.Error("error checking username", nil, map[string]interface{}{"error": err})
+		return nil, apperror.ErrInternal
+	}
+
+	// Хэшируем пароль
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), s.bcryptCost)
+	if err != nil {
+		s.logger.Error("failed to hash password", err, nil)
+		return nil, apperror.ErrInternal
+	}
+
+	// Создаём пользователя
+	now := time.Now()
+	user := &entity.User{
+		Username:     input.Username,
+		Email:        input.Email,
+		PasswordHash: string(hashedPassword),
+		IsActive:     true,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		Role:         *role,
+	}
+
+	if err := s.userRepo.Create(ctx, user); err != nil {
+		s.logger.Error("failed to create user", err, nil)
+		if strings.Contains(err.Error(), "already exists") {
+			return nil, apperror.ErrConflict
+		}
+		return nil, apperror.ErrInternal
+	}
+
+	s.logger.Info("user registered successfully", map[string]interface{}{"user_id": user.ID, "role": user.Role.Name})
+	return user, nil
 }
 
-// LoginUser validates credentials and returns JWT tokens.
-func (s *userService) LoginUser(ctx context.Context, email, password string) (*entity.UserToken, error) {
-	// TODO: Get user from repository by email
+// Login аутентифицирует пользователя и возвращает JWT access-токен.
+func (s *userService) Login(ctx context.Context, input service.LoginInput) (*service.AuthResult, error) {
+	if input.Email == "" || input.Password == "" {
+		return nil, apperror.ErrUnauthorized
+	}
 
-	// TODO: Validate password against stored hash using bcrypt
+	// Получаем пользователя по email
+	user, err := s.userRepo.GetByEmail(ctx, input.Email)
+	if err != nil {
+		s.logger.Warn("login attempt with non-existent email", map[string]interface{}{"email": input.Email})
+		return nil, apperror.ErrUnauthorized
+	}
 
-	// TODO: Generate access and refresh tokens using s.jwtClient
+	// Проверяем, активен ли пользователь
+	if !user.IsActive {
+		s.logger.Warn("login attempt with inactive user", map[string]interface{}{"user_id": user.ID})
+		return nil, apperror.ErrUnauthorized
+	}
 
-	// TODO: Return tokens or handle error
-	return nil, errors.New("not implemented")
+	// Сравниваем пароли
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
+		s.logger.Warn("invalid password attempt", map[string]interface{}{"user_id": user.ID})
+		return nil, apperror.ErrUnauthorized
+	}
+
+	// Генерируем JWT access-токен
+	token, err := s.jwtClient.Generate(user.ID, user.Role.Name)
+	if err != nil {
+		s.logger.Error("failed to generate token", err, nil)
+		return nil, apperror.ErrInternal
+	}
+
+	expiresAt := time.Now().Add(time.Duration(24) * time.Hour) // TODO: Use config TTL
+
+	s.logger.Info("user logged in successfully", map[string]interface{}{"user_id": user.ID})
+	return &service.AuthResult{
+		Token:     token,
+		ExpiresAt: expiresAt,
+		User:      user,
+	}, nil
 }
 
-// GetUser retrieves user by ID.
-func (s *userService) GetUser(ctx context.Context, id int64) (*entity.User, error) {
-	// TODO: Get user from repository
+// GetProfile возвращает профиль пользователя по ID.
+func (s *userService) GetProfile(ctx context.Context, userID int) (*service.UserProfile, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, apperror.ErrNotFound
+	}
 
-	// TODO: Handle NOT_FOUND error
-
-	return nil, errors.New("not implemented")
+	return &service.UserProfile{
+		ID:       user.ID,
+		Username: user.Username,
+		Email:    user.Email,
+		Role:     user.Role.Name,
+		IsActive: user.IsActive,
+	}, nil
 }
 
-// UpdateUser updates user profile.
-func (s *userService) UpdateUser(ctx context.Context, id int64, input *entity.UpdateUserInput) (*entity.User, error) {
-	// TODO: Check user exists
+// CheckPermission проверяет право пользователя на выполнение действия над ресурсом.
+func (s *userService) CheckPermission(ctx context.Context, userID int, resource string, action entity.Action) error {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return apperror.ErrNotFound
+	}
 
-	// TODO: Update user in repository
+	// Получаем ACL-записи для роли (с кэшированием)
+	entries, err := s.getACLEntries(ctx, user.Role.Name)
+	if err != nil {
+		s.logger.Error("failed to get ACL entries", err, nil)
+		return apperror.ErrInternal
+	}
 
-	// TODO: Return updated user or handle error
-	return nil, errors.New("not implemented")
+	// Проверяем разрешение
+	if !user.HasPermission(entries, resource, action) {
+		s.logger.Warn("permission denied", map[string]interface{}{
+			"user_id":  userID,
+			"role":     user.Role.Name,
+			"resource": resource,
+			"action":   action,
+		})
+		return apperror.ErrForbidden
+	}
+
+	return nil
 }
 
-// DeleteUser removes user.
-func (s *userService) DeleteUser(ctx context.Context, id int64) error {
-	// TODO: Check user exists
+// ChangeUserStatus блокирует или разблокирует учётную запись пользователя.
+func (s *userService) ChangeUserStatus(ctx context.Context, adminID int, targetUserID int, isActive bool) error {
+	// Проверяем, что adminID принадлежит администратору
+	admin, err := s.userRepo.GetByID(ctx, adminID)
+	if err != nil {
+		return apperror.ErrNotFound
+	}
 
-	// TODO: Delete user from repository
+	if !admin.IsAdmin() {
+		s.logger.Warn("non-admin user tried to change user status", map[string]interface{}{"admin_id": adminID})
+		return apperror.ErrForbidden
+	}
 
-	// TODO: Handle errors
-	return errors.New("not implemented")
+	// Получаем целевого пользователя
+	targetUser, err := s.userRepo.GetByID(ctx, targetUserID)
+	if err != nil {
+		return apperror.ErrNotFound
+	}
+
+	// Обновляем статус
+	targetUser.IsActive = isActive
+	targetUser.UpdatedAt = time.Now()
+
+	if err := s.userRepo.Update(ctx, targetUser); err != nil {
+		s.logger.Error("failed to update user status", err, nil)
+		return apperror.ErrInternal
+	}
+
+	s.logger.Info("user status changed", map[string]interface{}{
+		"admin_id":    adminID,
+		"target_user": targetUserID,
+		"is_active":   isActive,
+	})
+	return nil
 }
 
-// ListUsers returns paginated users list.
-func (s *userService) ListUsers(ctx context.Context, limit int, offset int) ([]*entity.User, error) {
-	// TODO: Validate pagination params
+// getACLEntries получает ACL-записи для роли с кэшированием.
+func (s *userService) getACLEntries(ctx context.Context, roleName string) ([]entity.ACLEntry, error) {
+	s.cacheMu.RLock()
+	if entries, ok := s.aclCache[roleName]; ok {
+		s.cacheMu.RUnlock()
+		return entries, nil
+	}
+	s.cacheMu.RUnlock()
 
-	// TODO: Get users from repository
+	// Загружаем из репозитория
+	entries, err := s.aclRepo.GetByRoleName(ctx, roleName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ACL entries: %w", err)
+	}
 
-	// TODO: Return paginated list or handle error
-	return nil, errors.New("not implemented")
+	// Кэшируем результат
+	s.cacheMu.Lock()
+	s.aclCache[roleName] = entries
+	s.cacheMu.Unlock()
+
+	return entries, nil
 }
 
-// RefreshAccessToken generates new access token from refresh token.
-func (s *userService) RefreshAccessToken(ctx context.Context, refreshToken string) (*entity.UserToken, error) {
-	// TODO: Validate refresh token using s.jwtClient
+// InvalidateACLCache инвалидирует кэш ACL для роли или все, если roleName пуст.
+func (s *userService) InvalidateACLCache(roleName string) {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
 
-	// TODO: Extract user ID from refresh token claims
-
-	// TODO: Get user to ensure still exists
-
-	// TODO: Generate new access token
-
-	// TODO: Return new token pair or handle error
-	return nil, errors.New("not implemented")
+	if roleName == "" {
+		// Очищаем весь кэш
+		s.aclCache = make(map[string][]entity.ACLEntry)
+	} else {
+		delete(s.aclCache, roleName)
+	}
 }

@@ -1,42 +1,46 @@
-// pkg/database/postgres/postgres.go
 package postgres
 
 import (
 	"context"
 	"fmt"
+	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/artyomstank/virtual_deanery/internal/config"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// NewPool creates new postgres connection pool.
-func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
-	// TODO: Parse database URL
+// New создаёт и настраивает пул соединений с PostgreSQL.
+// Принимает контекст и конфигурацию, возвращает готовый пул.
+// В случае ошибки возвращает её, обёрнутую в "postgres.New: %w".
+func New(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
+	poolConfig, err := pgxpool.ParseConfig(cfg.DSN())
+	if err != nil {
+		return nil, fmt.Errorf("postgres.New: %w", err)
+	}
 
-	// TODO: Create pgxpool config
+	poolConfig.MaxConns = 25
+	poolConfig.MinConns = 5
+	poolConfig.MaxConnLifetime = 1 * time.Hour
+	poolConfig.MaxConnIdleTime = 30 * time.Minute
+	poolConfig.HealthCheckPeriod = 1 * time.Minute
 
-	// TODO: Set max connections
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	if err != nil {
+		return nil, fmt.Errorf("postgres.New: %w", err)
+	}
 
-	// TODO: Create pool with retry logic
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("postgres.New: %w", err)
+	}
 
-	// TODO: Test connection with Ping()
-
-	return nil, fmt.Errorf("not implemented")
+	return pool, nil
 }
 
-// Tx represents database transaction interface for mocking.
-type Tx interface {
-	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)
-	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
-	Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
-	Commit(ctx context.Context) error
-	Rollback(ctx context.Context) error
-}
-
-// BeginTx starts new transaction.
-func BeginTx(ctx context.Context, pool *pgxpool.Pool) (Tx, error) {
-	// TODO: Start transaction
-
-	return nil, fmt.Errorf("not implemented")
+// Close корректно завершает работу пула соединений.
+// Безопасна для вызова с nil-указателем.
+func Close(pool *pgxpool.Pool) {
+	if pool != nil {
+		pool.Close()
+	}
 }

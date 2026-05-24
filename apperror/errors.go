@@ -1,98 +1,68 @@
-// apperror/errors.go
+// Package apperror содержит определения ошибок приложения, используемых во всех слоях.
 package apperror
 
 import (
-	"fmt"
+	"errors"
+	"net/http"
 )
 
-// Code represents application error code.
-type Code string
-
-const (
-	// NOT_FOUND when resource not found
-	NOT_FOUND Code = "NOT_FOUND"
-
-	// CONFLICT when resource already exists
-	CONFLICT Code = "CONFLICT"
-
-	// BAD_REQUEST when input is invalid
-	BAD_REQUEST Code = "BAD_REQUEST"
-
-	// INVALID_CREDENTIALS when auth fails
-	INVALID_CREDENTIALS Code = "INVALID_CREDENTIALS"
-
-	// FORBIDDEN when user lacks permissions
-	FORBIDDEN Code = "FORBIDDEN"
-
-	// INTERNAL_SERVER for unexpected errors
-	INTERNAL_SERVER Code = "INTERNAL_SERVER"
-
-	// VALIDATION_ERROR for validation failures
-	VALIDATION_ERROR Code = "VALIDATION_ERROR"
-
-	// UNAUTHENTICATED when token is missing/invalid
-	UNAUTHENTICATED Code = "UNAUTHENTICATED"
-)
-
-// AppError represents application error.
+// AppError представляет ошибку с HTTP-статусом, сообщением для клиента и внутренней ошибкой.
 type AppError struct {
-	Code    Code
-	Message string
-	Cause   error
+	Code    int    // HTTP-статус код
+	Message string // сообщение для клиента
+	Err     error  // оригинальная внутренняя ошибка (может быть nil)
 }
 
-// Error implements error interface.
+// Error реализует интерфейс error.
+// Возвращает Message, если внутренняя ошибка отсутствует, иначе её текст.
 func (e *AppError) Error() string {
-	if e.Cause != nil {
-		return fmt.Sprintf("%s: %s (caused by: %v)", e.Code, e.Message, e.Cause)
+	if e.Err == nil {
+		return e.Message
 	}
-	return fmt.Sprintf("%s: %s", e.Code, e.Message)
+	return e.Err.Error()
 }
 
-// Is checks if error matches code.
-func (e *AppError) Is(code Code) bool {
-	return e.Code == code
+// Unwrap возвращает внутреннюю ошибку для поддержки errors.Is и errors.As.
+func (e *AppError) Unwrap() error {
+	return e.Err
 }
 
-// Sentinel errors
+// New создаёт новый экземпляр AppError с заданными параметрами.
+func New(code int, message string, err error) *AppError {
+	return &AppError{
+		Code:    code,
+		Message: message,
+		Err:     err,
+	}
+}
+
+// Стандартные ошибки приложения.
 var (
-	ErrNotFound           = &AppError{Code: NOT_FOUND, Message: "resource not found"}
-	ErrConflict           = &AppError{Code: CONFLICT, Message: "resource already exists"}
-	ErrBadRequest         = &AppError{Code: BAD_REQUEST, Message: "invalid request"}
-	ErrInvalidCredentials = &AppError{Code: INVALID_CREDENTIALS, Message: "invalid credentials"}
-	ErrForbidden          = &AppError{Code: FORBIDDEN, Message: "access denied"}
-	ErrInternalServer     = &AppError{Code: INTERNAL_SERVER, Message: "internal server error"}
-	ErrValidation         = &AppError{Code: VALIDATION_ERROR, Message: "validation failed"}
-	ErrUnauthenticated    = &AppError{Code: UNAUTHENTICATED, Message: "authentication required"}
+	// ErrNotFound — ресурс не найден.
+	ErrNotFound = New(http.StatusNotFound, "not found", nil)
+
+	// ErrUnauthorized — неверные учётные данные.
+	ErrUnauthorized = New(http.StatusUnauthorized, "invalid credentials", nil)
+
+	// ErrForbidden — недостаточно прав.
+	ErrForbidden = New(http.StatusForbidden, "permission denied", nil)
+
+	// ErrConflict — конфликт (например, дубликат записи).
+	ErrConflict = New(http.StatusConflict, "already exists", nil)
+
+	// ErrInvalidInput — некорректные входные данные.
+	ErrInvalidInput = New(http.StatusBadRequest, "invalid input", nil)
+
+	// ErrInternal — внутренняя ошибка сервера.
+	ErrInternal = New(http.StatusInternalServerError, "internal server error", nil)
 )
 
-// New creates new app error.
-func New(code Code, message string) *AppError {
-	return &AppError{
-		Code:    code,
-		Message: message,
+// Is проверяет, является ли ошибка err ошибкой типа *AppError с кодом, равным коду target.
+// Использует errors.As для извлечения *AppError из цепочки ошибок.
+func Is(err error, target *AppError) bool {
+	var appErr *AppError
+	if errors.As(err, &appErr) {
+		return appErr.Code == target.Code
 	}
-}
-
-// Wrap wraps error with app error.
-func Wrap(code Code, message string, cause error) *AppError {
-	return &AppError{
-		Code:    code,
-		Message: message,
-		Cause:   cause,
-	}
-}
-
-// IsAppError checks if error is AppError.
-func IsAppError(err error) bool {
-	_, ok := err.(*AppError)
-	return ok
-}
-
-// GetCode extracts error code from error.
-func GetCode(err error) Code {
-	if ae, ok := err.(*AppError); ok {
-		return ae.Code
-	}
-	return INTERNAL_SERVER
+	return false
 }

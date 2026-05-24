@@ -1,86 +1,79 @@
-// pkg/httputil/response.go
 package httputil
 
 import (
+	"errors"
 	"net/http"
 
+	"github.com/artyomstank/virtual_deanery/apperror"
 	"github.com/gin-gonic/gin"
 )
 
-// Response is generic JSON response.
-type Response struct {
-	Success bool        `json:"success"`
-	Data    interface{} `json:"data,omitempty"`
-	Error   *ErrorInfo  `json:"error,omitempty"`
+// SuccessResponse представляет тело успешного JSON-ответа.
+type SuccessResponse struct {
+	Data any `json:"data"`
 }
 
-// ErrorInfo contains error details.
-type ErrorInfo struct {
-	Code    string `json:"code"`
+// ErrorResponse представляет тело JSON-ответа с ошибкой.
+type ErrorResponse struct {
+	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
 
-// PaginationResponse wraps paginated data.
-type PaginationResponse struct {
-	Total  int64       `json:"total"`
-	Limit  int         `json:"limit"`
-	Offset int         `json:"offset"`
-	Items  interface{} `json:"items"`
+// OK отправляет успешный ответ с HTTP-статусом 200 и переданными данными.
+func OK(c *gin.Context, data any) {
+	c.JSON(http.StatusOK, SuccessResponse{Data: data})
 }
 
-// JSON sends JSON response with status code.
-func JSON(c *gin.Context, statusCode int, data interface{}) {
-	c.JSON(statusCode, Response{
-		Success: statusCode >= 200 && statusCode < 300,
-		Data:    data,
-	})
+// Created отправляет ответ с HTTP-статусом 201 и переданными данными.
+func Created(c *gin.Context, data any) {
+	c.JSON(http.StatusCreated, SuccessResponse{Data: data})
 }
 
-// OK sends 200 OK with data.
-func OK(c *gin.Context, data interface{}) {
-	JSON(c, http.StatusOK, data)
-}
-
-// Created sends 201 Created with data.
-func Created(c *gin.Context, data interface{}) {
-	JSON(c, http.StatusCreated, data)
-}
-
-// NoContent sends 204 No Content.
+// NoContent отправляет ответ с HTTP-статусом 204 без тела.
 func NoContent(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// Error sends error response.
-// TODO: Map apperror codes to HTTP status codes
-// NOT_FOUND → 404
-// CONFLICT → 409
-// INVALID_CREDENTIALS → 401
-// FORBIDDEN → 403
-// BAD_REQUEST → 400
-// INTERNAL_SERVER → 500
+// Error обрабатывает переданную ошибку и отправляет соответствующий JSON-ответ.
+// Если ошибка является AppError, используются её код и сообщение.
+// В противном случае возвращается статус 500 с текстом "internal server error".
+// После отправки ответа вызывается c.Abort() для предотвращения дальнейшей обработки запроса.
 func Error(c *gin.Context, err error) {
-	// TODO: Check if err is apperror, extract code
-
-	// TODO: Determine HTTP status code
-
-	// TODO: Send error response
-
-	c.JSON(http.StatusInternalServerError, Response{
-		Success: false,
-		Error: &ErrorInfo{
-			Code:    "INTERNAL_SERVER",
+	var appErr *apperror.AppError
+	if errors.As(err, &appErr) {
+		c.JSON(appErr.Code, ErrorResponse{
+			Code:    appErr.Code,
+			Message: appErr.Message,
+		})
+	} else {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Code:    http.StatusInternalServerError,
 			Message: "internal server error",
-		},
-	})
+		})
+	}
+	c.Abort()
 }
 
-// Paginated sends paginated response.
-func Paginated(c *gin.Context, items interface{}, total int64, limit, offset int) {
-	JSON(c, http.StatusOK, PaginationResponse{
-		Total:  total,
-		Limit:  limit,
-		Offset: offset,
-		Items:  items,
-	})
+// BadRequest отправляет ответ с HTTP-статусом 400 и переданным сообщением об ошибке.
+func BadRequest(c *gin.Context, message string) {
+	err := &apperror.AppError{Code: http.StatusBadRequest, Message: message}
+	Error(c, err)
+}
+
+// Unauthorized отправляет ответ с HTTP-статусом 401 и сообщением "invalid credentials".
+func Unauthorized(c *gin.Context) {
+	err := &apperror.AppError{Code: http.StatusUnauthorized, Message: "invalid credentials"}
+	Error(c, err)
+}
+
+// Forbidden отправляет ответ с HTTP-статусом 403 и сообщением "permission denied".
+func Forbidden(c *gin.Context) {
+	err := &apperror.AppError{Code: http.StatusForbidden, Message: "permission denied"}
+	Error(c, err)
+}
+
+// NotFound отправляет ответ с HTTP-статусом 404 и сообщением "not found".
+func NotFound(c *gin.Context) {
+	err := &apperror.AppError{Code: http.StatusNotFound, Message: "not found"}
+	Error(c, err)
 }

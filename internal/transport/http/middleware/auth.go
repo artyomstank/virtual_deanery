@@ -3,58 +3,125 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 
+	"github.com/gin-gonic/gin"
+
+	"github.com/artyomstank/virtual_deanery/internal/transport/http/dto"
 	"github.com/artyomstank/virtual_deanery/pkg/jwt"
 	"github.com/artyomstank/virtual_deanery/pkg/logger"
-	"github.com/gin-gonic/gin"
 )
 
-// AuthMiddleware validates JWT token from Authorization header.
-func AuthMiddleware(jwtClient jwt.TokenClient, logger logger.Logger) gin.HandlerFunc {
+// AuthMiddleware валидирует JWT-токен из заголовка Authorization.
+// Ожидает формат: "Authorization: Bearer <token>"
+// При успешной валидации сохраняет user_id и role в контекст запроса.
+func AuthMiddleware(jwtClient *jwt.Manager, logger *logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Extract token from "Authorization: Bearer <token>" header
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			logger.Warn("missing authorization header", map[string]interface{}{"path": c.Request.URL.Path})
+			c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+				Code:    http.StatusUnauthorized,
+				Message: "missing authorization header",
+			})
+			c.Abort()
+			return
+		}
 
-		// TODO: Validate token using jwtClient.ValidateToken()
+		// Извлекаем токен из заголовка
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			logger.Warn("invalid authorization header format", map[string]interface{}{"path": c.Request.URL.Path})
+			c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+				Code:    http.StatusUnauthorized,
+				Message: "invalid authorization header format",
+			})
+			c.Abort()
+			return
+		}
 
-		// TODO: Extract claims from token
+		token := parts[1]
 
-		// TODO: Put user ID in context (c.Set("user_id", claims.UserID))
+		// Валидируем токен
+		claims, err := jwtClient.Parse(token)
+		if err != nil {
+			logger.Warn("invalid or expired token", map[string]interface{}{"error": err})
+			c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+				Code:    http.StatusUnauthorized,
+				Message: "invalid or expired token",
+			})
+			c.Abort()
+			return
+		}
 
-		// TODO: Handle invalid/expired token → return 401
+		// Сохраняем в контекст
+		c.Set("user_id", claims.UserID)
+		c.Set("role", claims.Role)
 
 		c.Next()
 	}
 }
 
-// LoggingMiddleware logs HTTP requests and responses.
-func LoggingMiddleware(logger logger.Logger) gin.HandlerFunc {
+// LoggingMiddleware логирует HTTP-запросы и ответы.
+func LoggingMiddleware(logger *logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Log request method, path, query params
+		logger.Info("http request", map[string]interface{}{
+			"method": c.Request.Method,
+			"path":   c.Request.URL.Path,
+		})
+
 		c.Next()
-		// TODO: Log response status code, latency
+
+		logger.Info("http response", map[string]interface{}{
+			"method": c.Request.Method,
+			"path":   c.Request.URL.Path,
+			"status": c.Writer.Status(),
+		})
 	}
 }
 
-// RecoveryMiddleware recovers from panics.
-func RecoveryMiddleware(logger logger.Logger) gin.HandlerFunc {
+// RecoveryMiddleware восстанавливается после паник.
+func RecoveryMiddleware(logger *logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement panic recovery
-		// TODO: Log panic details
-		// TODO: Return 500 Internal Server Error
+		defer func() {
+			if err := recover(); err != nil {
+				logger.Error("panic recovered", nil, map[string]interface{}{
+					"panic": err,
+					"path":  c.Request.URL.Path,
+				})
+				c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+					Code:    http.StatusInternalServerError,
+					Message: "internal server error",
+				})
+				c.Abort()
+			}
+		}()
 		c.Next()
 	}
 }
 
-// CORSMiddleware handles CORS.
+// CORSMiddleware обрабатывает CORS.
 func CORSMiddleware(allowedOrigins []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Get origin from request
+		origin := c.Request.Header.Get("Origin")
 
-		// TODO: Check if origin in allowedOrigins
+		// Проверяем, разрешено ли это происхождение
+		allowed := false
+		for _, o := range allowedOrigins {
+			if o == "*" || o == origin {
+				allowed = true
+				break
+			}
+		}
 
-		// TODO: Set CORS headers (Access-Control-Allow-Origin, etc.)
+		if allowed {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+			c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		}
 
-		if c.Request.Method == http.MethodOptions {
+		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}

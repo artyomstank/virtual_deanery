@@ -1,82 +1,107 @@
-// pkg/logger/logger.go
 package logger
 
 import (
-	"context"
-
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
-// Logger provides logging interface.
-type Logger interface {
-	// Debug logs at debug level.
-	Debug(msg string, fields ...interface{})
-
-	// Info logs at info level.
-	Info(msg string, fields ...interface{})
-
-	// Warn logs at warning level.
-	Warn(msg string, fields ...interface{})
-
-	// Error logs at error level.
-	Error(msg string, fields ...interface{})
-
-	// Fatal logs at fatal level and exits.
-	Fatal(msg string, fields ...interface{})
-
-	// WithContext returns context-aware logger.
-	WithContext(ctx context.Context) Logger
-}
-
-// ZapLogger wraps zap logger.
-type ZapLogger struct {
+// Logger представляет собой обёртку над zap.Logger для структурированного
+// логирования с постоянными полями и уровнями.
+type Logger struct {
 	logger *zap.Logger
 }
 
-// NewZapLogger creates new zap logger.
-func NewZapLogger(level string) (*ZapLogger, error) {
-	// TODO: Create zap config based on level (debug, info, warn, error)
+// New создаёт новый экземпляр Logger с заданным уровнем логирования.
+// Параметр level принимает значения "debug", "info", "warn", "error".
+// При неизвестном уровне по умолчанию используется "info".
+// В режиме "debug" вывод производится в читаемом текстовом формате через консоль,
+// в остальных случаях — в JSON на stdout. Каждое сообщение снабжается меткой
+// времени в формате RFC3339.
+func New(level string) *Logger {
+	parsedLevel := parseLevel(level)
 
-	// TODO: Build logger from config
+	var cfg zap.Config
+	if level == "debug" {
+		cfg = zap.NewDevelopmentConfig()
+	} else {
+		cfg = zap.NewProductionConfig()
+	}
 
-	// TODO: Return ZapLogger or error
-	return nil, nil
+	// Единый формат времени для всех режимов
+	cfg.EncoderConfig.EncodeTime = zapcore.RFC3339TimeEncoder
+	cfg.Level = zap.NewAtomicLevelAt(parsedLevel)
+	cfg.OutputPaths = []string{"stdout"}
+	cfg.ErrorOutputPaths = []string{"stderr"}
+
+	logger, err := cfg.Build()
+	if err != nil {
+		// Резервный вариант — без дополнительных зависимостей
+		panic("failed to build logger: " + err.Error())
+	}
+
+	return &Logger{logger: logger}
 }
 
-// Debug logs at debug level.
-func (l *ZapLogger) Debug(msg string, fields ...interface{}) {
-	// TODO: Convert fields to zap fields (if any)
-
-	// TODO: Log using l.logger.Debug()
+// parseLevel преобразует строку уровня в zapcore.Level.
+// При ошибке возвращает InfoLevel.
+func parseLevel(level string) zapcore.Level {
+	switch level {
+	case "debug":
+		return zapcore.DebugLevel
+	case "info":
+		return zapcore.InfoLevel
+	case "warn":
+		return zapcore.WarnLevel
+	case "error":
+		return zapcore.ErrorLevel
+	default:
+		return zapcore.InfoLevel
+	}
 }
 
-// Info logs at info level.
-func (l *ZapLogger) Info(msg string, fields ...interface{}) {
-	// TODO: Log using l.logger.Info()
+// Debug записывает отладочное сообщение с дополнительными полями.
+func (l *Logger) Debug(msg string, fields map[string]any) {
+	l.logger.Debug(msg, mapToFields(fields)...)
 }
 
-// Warn logs at warning level.
-func (l *ZapLogger) Warn(msg string, fields ...interface{}) {
-	// TODO: Log using l.logger.Warn()
+// Info записывает информационное сообщение с дополнительными полями.
+func (l *Logger) Info(msg string, fields map[string]any) {
+	l.logger.Info(msg, mapToFields(fields)...)
 }
 
-// Error logs at error level.
-func (l *ZapLogger) Error(msg string, fields ...interface{}) {
-	// TODO: Log using l.logger.Error()
+// Warn записывает предупреждение с дополнительными полями.
+func (l *Logger) Warn(msg string, fields map[string]any) {
+	l.logger.Warn(msg, mapToFields(fields)...)
 }
 
-// Fatal logs at fatal level and exits.
-func (l *ZapLogger) Fatal(msg string, fields ...interface{}) {
-	// TODO: Log using l.logger.Fatal()
+// Error записывает сообщение об ошибке. Если err не равен nil, в лог добавляется
+// поле "error" со значением err.Error(). Дополнительные поля из fields
+// также добавляются при их наличии.
+func (l *Logger) Error(msg string, err error, fields map[string]any) {
+	zapFields := mapToFields(fields)
+	if err != nil {
+		zapFields = append(zapFields, zap.Error(err))
+	}
+	l.logger.Error(msg, zapFields...)
 }
 
-// WithContext returns context-aware logger.
-func (l *ZapLogger) WithContext(ctx context.Context) Logger {
-	// TODO: Return logger that includes context info in logs
-	return l
+// With возвращает новый Logger с добавленным постоянным полем key=value.
+// Метод удобен для привязки контекста, например:
+//
+//	logger.With("service", "user").Info("запрос обработан", nil)
+func (l *Logger) With(key string, value any) *Logger {
+	return &Logger{logger: l.logger.With(zap.Any(key, value))}
 }
 
-// Sync flushes any buffered log entries.
-func (l *ZapLogger) Sync() error {
-	return l.logger.Sync()
+// mapToFields преобразует map в срез zap.Field.
+// Если fields == nil, возвращает пустой срез, чтобы избежать паники.
+func mapToFields(fields map[string]any) []zap.Field {
+	if fields == nil {
+		return nil
+	}
+	zapFields := make([]zap.Field, 0, len(fields))
+	for k, v := range fields {
+		zapFields = append(zapFields, zap.Any(k, v))
+	}
+	return zapFields
 }

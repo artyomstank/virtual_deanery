@@ -10,15 +10,15 @@ import (
 	"github.com/artyomstank/virtual_deanery/pkg/logger"
 )
 
-// Server represents HTTP server.
+// Server представляет HTTP-сервер.
 type Server struct {
 	httpServer *http.Server
 	port       int
-	logger     logger.Logger
+	logger     *logger.Logger
 }
 
-// NewServer creates new HTTP server.
-func NewServer(handler http.Handler, port int, logger logger.Logger) *Server {
+// NewServer создаёт новый HTTP-сервер.
+func NewServer(handler http.Handler, port int, logger *logger.Logger) *Server {
 	return &Server{
 		httpServer: &http.Server{
 			Addr:         fmt.Sprintf(":%d", port),
@@ -32,14 +32,14 @@ func NewServer(handler http.Handler, port int, logger logger.Logger) *Server {
 	}
 }
 
-// Start starts listening on configured port.
+// Start начинает слушание на настроенном порту.
 func (s *Server) Start() error {
-	// TODO: Log server start on port
+	s.logger.Info("starting HTTP server", map[string]interface{}{"port": s.port})
 	return s.httpServer.ListenAndServe()
 }
 
-// Stop gracefully shuts down server.
+// Stop корректно завершает работу сервера.
 func (s *Server) Stop(ctx context.Context) error {
-	// TODO: Log server shutdown
+	s.logger.Info("stopping HTTP server", nil)
 	return s.httpServer.Shutdown(ctx)
 }

@@ -6,142 +6,124 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
-	grpc_server "github.com/artyomstank/virtual_deanery/internal/transport/grpc"
+	"github.com/artyomstank/virtual_deanery/internal/config"
+	postgres_repo "github.com/artyomstank/virtual_deanery/internal/repo/postgres"
+	"github.com/artyomstank/virtual_deanery/internal/service"
 	http_server "github.com/artyomstank/virtual_deanery/internal/transport/http"
+	"github.com/artyomstank/virtual_deanery/internal/transport/http/handler"
+	"github.com/artyomstank/virtual_deanery/internal/transport/http/router"
+	postgres_db "github.com/artyomstank/virtual_deanery/pkg/database/postgres"
+	"github.com/artyomstank/virtual_deanery/pkg/jwt"
 	"github.com/artyomstank/virtual_deanery/pkg/logger"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// App represents application instance with all dependencies.
+// App представляет экземпляр приложения со всеми зависимостями.
 type App struct {
 	httpServer *http_server.Server
-	grpcServer *grpc_server.Server
 	dbPool     *pgxpool.Pool
-	logger     logger.Logger
+	logger     *logger.Logger
 }
 
-// Config holds application configuration.
-type Config struct {
-	HTTPPort           int
-	GRPCPort           int
-	DatabaseURL        string
-	LogLevel           string
-	JWTSecretKey       string
-	JWTAlgo            string
-	JWTAccessTTL       time.Duration
-	JWTRefreshTTL      time.Duration
-	BCryptCost         int
-	CORSAllowedOrigins []string
-}
+// New создаёт и инициализирует приложение со всеми зависимостями.
+func New(cfg *config.Config) (*App, error) {
+	// Инициализируем логгер
+	log := logger.New(cfg.LogLevel)
 
-// New creates and initializes application with all dependencies.
-func New(cfg *Config) (*App, error) {
-	// TODO: Initialize logger
-	// log, err := logger.NewZapLogger(cfg.LogLevel)
+	// Инициализируем пул соединений с БД
+	pool, err := postgres_db.New(context.Background(), cfg)
+	if err != nil {
+		log.Error("failed to connect to database", err, nil)
+		return nil, err
+	}
 
-	// TODO: Initialize database connection pool
-	// pool, err := postgres.NewPool(context.Background(), cfg.DatabaseURL)
+	// Инициализируем JWT-клиент
+	jwtClient := jwt.NewManager(cfg.JWTSecret, cfg.JWTExpireHours)
 
-	// TODO: Initialize JWT client
-	// jwtClient := jwt.NewJWTClient(
-	//     cfg.JWTSecretKey,
-	//     cfg.JWTAlgo,
-	//     cfg.JWTAccessTTL,
-	//     cfg.JWTRefreshTTL,
-	// )
+	// Инициализируем репозитории
+	userRepo := postgres_repo.NewUserRepo(pool)
+	roleRepo := postgres_repo.NewRoleRepo(pool)
+	aclRepo := postgres_repo.NewACLRepo(pool)
 
-	// TODO: Initialize repositories
-	// var userRepo repository.UserRepository
-	// userRepo = postgres.NewUserRepository(pool, log)
+	// Инициализируем сервисы
+	userService := service.NewUserService(userRepo, roleRepo, aclRepo, jwtClient, log, cfg.BCryptCost)
+	aclService := service.NewACLService(userRepo, roleRepo, aclRepo, log, userService)
 
-	// TODO: Initialize services
-	// userService := service.NewUserService(userRepo, jwtClient, log, cfg.BCryptCost)
+	// Инициализируем HTTP-обработчики
+	userHandler := handler.NewUserHandler(userService, log)
+	aclHandler := handler.NewACLHandler(aclService, log)
 
-	// TODO: Initialize HTTP handlers
-	// userHandler := handler.NewUserHandler(userService, log)
+	// Инициализируем HTTP-роутер
+	corsOrigins := []string{"*"} // TODO: Load from config
+	httpRouter := router.NewRouter(userHandler, aclHandler, userService, jwtClient, log, corsOrigins)
 
-	// TODO: Initialize HTTP router
-	// httpRouter := router.NewRouter(userHandler, jwtClient, log, cfg.CORSAllowedOrigins)
+	// Инициализируем HTTP-сервер
+	httpPort, err := strconv.Atoi(cfg.HTTPPort)
+	if err != nil {
+		httpPort = 8080
+	}
+	httpSrv := http_server.NewServer(httpRouter.Setup(), httpPort, log)
 
-	// TODO: Initialize gRPC handlers
-	// grpcUserHandler := grpc_handler.NewUserServiceServer(userService, log)
-
-	// TODO: Initialize servers
-	// httpSrv := http_server.NewServer(httpRouter.Setup(), cfg.HTTPPort, log)
-	// grpcSrv := grpc_server.NewServer(cfg.GRPCPort, grpcUserHandler, jwtClient, log)
+	log.Info("application initialized successfully", nil)
 
 	return &App{
-		// httpServer: httpSrv,
-		// grpcServer: grpcSrv,
-		// dbPool:     pool,
-		// logger:     log,
+		httpServer: httpSrv,
+		dbPool:     pool,
+		logger:     log,
 	}, nil
 }
 
-// Run starts both HTTP and gRPC servers with graceful shutdown.
+// Run запускает HTTP-сервер с graceful shutdown.
 func (a *App) Run(ctx context.Context) error {
-	// TODO: Create channel for server errors
-	errChan := make(chan error, 2)
+	// Создаём канал для ошибок сервера
+	errChan := make(chan error, 1)
 
-	// TODO: Start HTTP server in goroutine
+	// Запускаем HTTP-сервер в отдельной горутине
 	go func() {
 		if err := a.httpServer.Start(); err != nil && err != http.ErrServerClosed {
 			errChan <- err
 		}
 	}()
 
-	// TODO: Start gRPC server in goroutine
-	go func() {
-		if err := a.grpcServer.Start(); err != nil {
-			errChan <- err
-		}
-	}()
+	a.logger.Info("HTTP server started", nil)
 
-	// TODO: Create signal channel for graceful shutdown
+	// Создаём канал для сигналов ОС
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// TODO: Wait for error or shutdown signal
+	// Ждём ошибку или сигнал завершения
 	select {
 	case err := <-errChan:
-		a.logger.Error("server error", err)
+		a.logger.Error("server error", err, nil)
 		return err
 	case sig := <-sigChan:
-		a.logger.Info("shutdown signal received", sig)
+		a.logger.Info("shutdown signal received", map[string]interface{}{"signal": sig.String()})
 		return a.Shutdown(ctx)
 	}
 }
 
-// Shutdown gracefully shuts down all servers and closes connections.
+// Shutdown корректно завершает работу всех сервисов.
 func (a *App) Shutdown(ctx context.Context) error {
-	// TODO: Create shutdown context with timeout
+	// Создаём контекст с timeout для завершения
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// TODO: Shutdown HTTP server
-	a.logger.Info("shutting down HTTP server")
+	// Завершаем HTTP-сервер
+	a.logger.Info("shutting down HTTP server", nil)
 	if err := a.httpServer.Stop(shutdownCtx); err != nil {
-		a.logger.Error("HTTP server shutdown error", err)
+		a.logger.Error("HTTP server shutdown error", err, nil)
 	}
 
-	// TODO: Shutdown gRPC server
-	a.logger.Info("shutting down gRPC server")
-	a.grpcServer.Stop(shutdownCtx)
-
-	// TODO: Close database pool
+	// Закрываем пул соединений БД
 	if a.dbPool != nil {
-		a.logger.Info("closing database pool")
+		a.logger.Info("closing database pool", nil)
 		a.dbPool.Close()
 	}
 
-	// TODO: Sync logger
-	if syncLogger, ok := a.logger.(*logger.ZapLogger); ok {
-		syncLogger.Sync()
-	}
-
-	a.logger.Info("application shut down successfully")
+	a.logger.Info("application shut down successfully", nil)
 	return nil
 }

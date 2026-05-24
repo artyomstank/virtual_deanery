@@ -3,23 +3,40 @@ package dto
 
 import "time"
 
-// UserResponse is DTO for user response.
+// RegisterUserRequest — DTO для запроса регистрации пользователя.
+type RegisterUserRequest struct {
+	Username string `json:"username" validate:"required,min=3,max=100"`
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required,min=8"`
+	Role     string `json:"role" validate:"omitempty,oneof=admin teacher student dean"`
+}
+
+// LoginUserRequest — DTO для запроса логина.
+type LoginUserRequest struct {
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required"`
+}
+
+// UserResponse — DTO для ответа с данными пользователя.
 type UserResponse struct {
-	ID        int64     `json:"id"`
+	ID        int       `json:"id"`
+	Username  string    `json:"username"`
 	Email     string    `json:"email"`
-	FullName  string    `json:"full_name"`
+	Role      string    `json:"role"`
+	IsActive  bool      `json:"is_active"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// LoginResponse is DTO for login response.
-type LoginResponse struct {
-	AccessToken string       `json:"access_token"`
-	User        UserResponse `json:"user"`
+// AuthResponse — DTO для ответа при успешной аутентификации.
+type AuthResponse struct {
+	AccessToken string        `json:"access_token"`
+	ExpiresAt   time.Time     `json:"expires_at"`
+	User        UserResponse  `json:"user"`
 }
 
-// RefreshResponse is DTO for refresh token response.
-type RefreshResponse struct {
-	AccessToken string `json:"access_token"`
-	ExpiresIn   int64  `json:"expires_in"`
+// ErrorResponse — DTO для ответа с ошибкой.
+type ErrorResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
 }

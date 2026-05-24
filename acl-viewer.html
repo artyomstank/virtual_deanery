@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Просмотр привилегий по ролям</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 8px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .header p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .main {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+        }
+
+        .roles-panel {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            height: fit-content;
+            position: sticky;
+            top: 20px;
+        }
+
+        .roles-panel h2 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .roles-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .role-btn {
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s ease;
+            text-align: left;
+            font-weight: 500;
+            color: #666;
+        }
+
+        .role-btn:hover {
+            border-color: #667eea;
+            background: #f5f7ff;
+            color: #667eea;
+        }
+
+        .role-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .acl-panel {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            min-height: 400px;
+        }
+
+        .acl-panel h2 {
+            font-size: 24px;
+            margin-bottom: 24px;
+            color: #333;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 12px;
+        }
+
+        .acl-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .acl-table thead {
+            background: #f5f7ff;
+        }
+
+        .acl-table th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #667eea;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .acl-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e0e0e0;
+            color: #666;
+        }
+
+        .acl-table tbody tr:hover {
+            background: #f9fafb;
+        }
+
+        .permission {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .permission.allowed {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .permission.denied {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .permission::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .empty-message {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+            font-size: 16px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+            font-size: 16px;
+        }
+
+        .error-message {
+            background: #fee;
+            color: #c33;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #c33;
+        }
+
+        .success-message {
+            background: #efe;
+            color: #3a3;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #3a3;
+        }
+
+        .api-info {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            font-size: 12px;
+            color: #999;
+        }
+
+        @media (max-width: 768px) {
+            .main {
+                grid-template-columns: 1fr;
+            }
+
+            .roles-panel {
+                position: static;
+            }
+
+            .roles-list {
+                flex-direction: row;
+                flex-wrap: wrap;
+            }
+
+            .role-btn {
+                flex: 1;
+                min-width: 100px;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔐 Привилегии по ролям</h1>
+            <p>Просмотр прав доступа для каждой роли в системе</p>
+        </div>
+
+        <div class="main">
+            <div class="roles-panel">
+                <h2>Роли</h2>
+                <div class="roles-list" id="rolesList">
+                    <div class="loading">Загрузка...</div>
+                </div>
+                <div class="api-info">
+                    <p>Base URL: <code id="baseUrl">http://localhost:8080</code></p>
+                    <p>
+                        <label>
+                            Токен:
+                            <input type="text" id="tokenInput" placeholder="JWT token (если требуется)" style="width: 100%; margin-top: 5px; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                        </label>
+                    </p>
+                </div>
+            </div>
+
+            <div class="acl-panel">
+                <h2 id="selectedRoleTitle">Выберите роль</h2>
+                <div id="aclContent">
+                    <div class="empty-message">👈 Выберите роль слева, чтобы увидеть её привилегии</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080';
+        let currentRole = null;
+
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', () => {
+            // Загружаем сохранённый URL и токен
+            const savedUrl = localStorage.getItem('apiBase');
+            const savedToken = localStorage.getItem('jwtToken');
+            
+            if (savedUrl) {
+                document.getElementById('baseUrl').textContent = savedUrl;
+            }
+            if (savedToken) {
+                document.getElementById('tokenInput').value = savedToken;
+            }
+
+            loadRoles();
+
+            // Сохраняем токен при изменении
+            document.getElementById('tokenInput').addEventListener('change', (e) => {
+                localStorage.setItem('jwtToken', e.target.value);
+            });
+        });
+
+        function getApiBase() {
+            return document.getElementById('baseUrl').textContent;
+        }
+
+        function getHeaders() {
+            const headers = {
+                'Content-Type': 'application/json',
+            };
+            const token = document.getElementById('tokenInput').value;
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+            return headers;
+        }
+
+        async function loadRoles() {
+            try {
+                const response = await fetch(`${getApiBase()}/api/v1/admin/roles`, {
+                    headers: getHeaders()
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const roles = await response.json();
+                displayRoles(roles);
+            } catch (error) {
+                console.error('Error loading roles:', error);
+                document.getElementById('rolesList').innerHTML = 
+                    `<div class="error-message">❌ Ошибка загрузки ролей:<br>${error.message}</div>`;
+            }
+        }
+
+        function displayRoles(roles) {
+            const rolesList = document.getElementById('rolesList');
+            if (!roles || roles.length === 0) {
+                rolesList.innerHTML = '<div class="empty-message">Роли не найдены</div>';
+                return;
+            }
+
+            rolesList.innerHTML = roles.map(role => `
+                <button class="role-btn" onclick="loadACL('${role.name}', '${role.name}')" title="${role.description || ''}">
+                    ${role.name}
+                </button>
+            `).join('');
+        }
+
+        async function loadACL(roleName, displayName) {
+            currentRole = { name: roleName, displayName };
+            
+            // Обновляем активную кнопку
+            document.querySelectorAll('.role-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            document.getElementById('selectedRoleTitle').textContent = `Роль: ${displayName}`;
+            document.getElementById('aclContent').innerHTML = '<div class="loading">Загрузка привилегий...</div>';
+
+            try {
+                const response = await fetch(`${getApiBase()}/api/v1/admin/acl/${roleName}`, {
+                    headers: getHeaders()
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const acl = await response.json();
+                displayACL(acl);
+            } catch (error) {
+                console.error('Error loading ACL:', error);
+                document.getElementById('aclContent').innerHTML = 
+                    `<div class="error-message">❌ Ошибка загрузки привилегий:<br>${error.message}</div>`;
+            }
+        }
+
+        function displayACL(acl) {
+            const content = document.getElementById('aclContent');
+
+            if (!acl || acl.length === 0) {
+                content.innerHTML = '<div class="empty-message">Для этой роли не установлены привилегии</div>';
+                return;
+            }
+
+            let html = `
+                <table class="acl-table">
+                    <thead>
+                        <tr>
+                            <th>Ресурс</th>
+                            <th>Описание</th>
+                            <th>Чтение</th>
+                            <th>Запись</th>
+                            <th>Удаление</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            acl.forEach(entry => {
+                const resourceName = entry.resource?.name || 'Неизвестный ресурс';
+                const resourceDesc = entry.resource?.description || '—';
+                
+                const readStatus = entry.can_read 
+                    ? '<span class="permission allowed">Разрешено</span>' 
+                    : '<span class="permission denied">Запрещено</span>';
+                
+                const writeStatus = entry.can_write 
+                    ? '<span class="permission allowed">Разрешено</span>' 
+                    : '<span class="permission denied">Запрещено</span>';
+                
+                const deleteStatus = entry.can_delete 
+                    ? '<span class="permission allowed">Разрешено</span>' 
+                    : '<span class="permission denied">Запрещено</span>';
+
+                html += `
+                    <tr>
+                        <td><strong>${resourceName}</strong></td>
+                        <td>${resourceDesc}</td>
+                        <td>${readStatus}</td>
+                        <td>${writeStatus}</td>
+                        <td>${deleteStatus}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                    </tbody>
+                </table>
+            `;
+
+            content.innerHTML = html;
+        }
+
+        // Возможность изменить base URL
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && e.key === 'I')) {
+                return; // Разрешаем открыть devtools
+            }
+        });
+
+        // Позволяем менять URL через localStorage
+        window.setApiBase = function(url) {
+            document.getElementById('baseUrl').textContent = url;
+            localStorage.setItem('apiBase', url);
+            loadRoles();
+        };
+    </script>
+</body>
+</html>
