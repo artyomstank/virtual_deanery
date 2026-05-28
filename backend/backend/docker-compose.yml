@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: myapp_postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: myapp
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - myapp_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d myapp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: myapp_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: myapp
+      DB_USER: user
+      DB_PASSWORD: password
+      DB_SSL_MODE: disable
+      HTTP_PORT: 8080
+      LOG_LEVEL: debug
+      JWT_SECRET: "dev-secret-key-change-in-production"
+      APP_ENV: development
+      BCRYPT_COST: 12
+    networks:
+      - myapp_network
+    restart: unless-stopped
+  migrate:
+    image: migrate/migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations
+    command:
+      [
+        "-path", "/migrations",
+        "-database", "postgres://user:password@postgres:5432/myapp?sslmode=disable",
+        "up"
+      ]
+    networks:
+      - myapp_network
+
+volumes:
+  postgres_data:
+
+networks:
+  myapp_network:
+    driver: bridge
