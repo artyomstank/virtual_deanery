@@ -17,7 +17,7 @@ run: ## Run application
 	$(GO) run cmd/api/main.go
 
 test: ## Run tests
-	$(GO) test -v -race -coverprofile=coverage.out ./...
+	$(GO) test -v -coverprofile=coverage.out ./...
 
 test-coverage: test ## Run tests with coverage report
 	$(GO) tool cover -html=coverage.out

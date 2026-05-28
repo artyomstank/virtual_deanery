@@ -19,7 +19,7 @@ import (
 func ACLMiddleware(userService service.UserService, resource string, action entity.Action, logger *logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Получаем user_id из контекста (установленного AuthMiddleware)
-		userIDInterface, exists := c.Get("user_id")
+		userIDInterface, exists := c.Get(UserIDKey)
 		if !exists {
 			logger.Warn("user_id not found in context", map[string]interface{}{"path": c.Request.URL.Path})
 			c.JSON(http.StatusUnauthorized, dto.ErrorResponse{

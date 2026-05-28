@@ -12,6 +12,12 @@ import (
 	"github.com/artyomstank/virtual_deanery/pkg/logger"
 )
 
+// Context key constants for storing values in gin.Context
+const (
+	UserIDKey = "user_id"
+	RoleKey   = "role"
+)
+
 // AuthMiddleware валидирует JWT-токен из заголовка Authorization.
 // Ожидает формат: "Authorization: Bearer <token>"
 // При успешной валидации сохраняет user_id и role в контекст запроса.
@@ -55,8 +61,8 @@ func AuthMiddleware(jwtClient *jwt.Manager, logger *logger.Logger) gin.HandlerFu
 		}
 
 		// Сохраняем в контекст
-		c.Set("user_id", claims.UserID)
-		c.Set("role", claims.Role)
+		c.Set(UserIDKey, claims.UserID)
+		c.Set(RoleKey, claims.Role)
 
 		c.Next()
 	}

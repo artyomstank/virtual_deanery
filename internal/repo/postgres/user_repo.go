@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -17,7 +18,6 @@ type UserRepo struct {
 	pool *pgxpool.Pool
 }
 
-// NewUserRepo создаёт новый экземпляр UserRepo.
 func NewUserRepo(pool *pgxpool.Pool) *UserRepo {
 	return &UserRepo{pool: pool}
 }
@@ -28,9 +28,8 @@ func (r *UserRepo) Create(ctx context.Context, user *entity.User) error {
 	if err != nil {
 		return fmt.Errorf("UserRepo.Create: %w", err)
 	}
-	defer tx.Rollback(ctx) // безопасно даже после коммита
+	defer tx.Rollback(ctx)
 
-	// Шаг 1: вставка пользователя
 	err = tx.QueryRow(ctx,
 		`INSERT INTO users(username, email, password_hash, is_active, created_at, updated_at)
 		 VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
@@ -40,27 +39,24 @@ func (r *UserRepo) Create(ctx context.Context, user *entity.User) error {
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			if contains(pgErr.ConstraintName, "email") {
+			if strings.Contains(pgErr.ConstraintName, "email") {
 				return fmt.Errorf("email already exists")
 			}
-			if contains(pgErr.ConstraintName, "username") {
+			if strings.Contains(pgErr.ConstraintName, "username") {
 				return fmt.Errorf("username already exists")
 			}
 		}
 		return fmt.Errorf("UserRepo.Create: %w", err)
 	}
 
-	// Шаг 2: получение ID роли по имени
 	var roleID int
 	err = tx.QueryRow(ctx,
-		`SELECT id FROM roles WHERE name = $1`,
-		user.Role.Name,
+		`SELECT id FROM roles WHERE name = $1`, user.Role.Name,
 	).Scan(&roleID)
 	if err != nil {
 		return fmt.Errorf("UserRepo.Create: %w", err)
 	}
 
-	// Шаг 3: назначение роли пользователю
 	_, err = tx.Exec(ctx,
 		`INSERT INTO user_roles(user_id, role_id) VALUES($1, $2)`,
 		user.ID, roleID,
@@ -69,13 +65,10 @@ func (r *UserRepo) Create(ctx context.Context, user *entity.User) error {
 		return fmt.Errorf("UserRepo.Create: %w", err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("UserRepo.Create: %w", err)
-	}
-	return nil
+	return tx.Commit(ctx)
 }
 
-// GetByID возвращает пользователя с указанным ID вместе с его ролью.
+// GetByID возвращает пользователя с ролью по ID.
 func (r *UserRepo) GetByID(ctx context.Context, id int) (*entity.User, error) {
 	query := `
 		SELECT u.id, u.username, u.email, u.password_hash, u.is_active,
@@ -101,7 +94,7 @@ func (r *UserRepo) GetByID(ctx context.Context, id int) (*entity.User, error) {
 	return user, nil
 }
 
-// GetByEmail возвращает пользователя по email вместе с его ролью.
+// GetByEmail возвращает пользователя по email с ролью.
 func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*entity.User, error) {
 	query := `
 		SELECT u.id, u.username, u.email, u.password_hash, u.is_active,
@@ -127,7 +120,7 @@ func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*entity.User, 
 	return user, nil
 }
 
-// GetByUsername возвращает пользователя по username вместе с его ролью.
+// GetByUsername возвращает пользователя по username с ролью.
 func (r *UserRepo) GetByUsername(ctx context.Context, username string) (*entity.User, error) {
 	query := `
 		SELECT u.id, u.username, u.email, u.password_hash, u.is_active,
@@ -153,19 +146,107 @@ func (r *UserRepo) GetByUsername(ctx context.Context, username string) (*entity.
 	return user, nil
 }
 
-// Update изменяет статус активности и время обновления пользователя.
+// List возвращает список пользователей с учётом фильтра.
+func (r *UserRepo) List(ctx context.Context, isActive *bool, role string) ([]entity.User, error) {
+	baseQuery := `
+		SELECT u.id, u.username, u.email, u.password_hash, u.is_active,
+		       u.created_at, u.updated_at, r.id, r.name, r.description
+		FROM users u
+		JOIN user_roles ur ON ur.user_id = u.id
+		JOIN roles r ON r.id = ur.role_id
+		WHERE 1=1`
+
+	var conditions []string
+	var args []interface{}
+	argIdx := 1
+
+	if isActive != nil {
+		conditions = append(conditions, fmt.Sprintf("u.is_active = $%d", argIdx))
+		args = append(args, *isActive)
+		argIdx++
+	}
+	if role != "" {
+		conditions = append(conditions, fmt.Sprintf("r.name = $%d", argIdx))
+		args = append(args, role)
+		argIdx++
+	}
+
+	if len(conditions) > 0 {
+		baseQuery += " AND " + strings.Join(conditions, " AND ")
+	}
+	baseQuery += " ORDER BY u.id"
+
+	rows, err := r.pool.Query(ctx, baseQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("UserRepo.List: %w", err)
+	}
+	defer rows.Close()
+
+	var users []entity.User
+	for rows.Next() {
+		var user entity.User
+		if err := rows.Scan(
+			&user.ID, &user.Username, &user.Email, &user.PasswordHash,
+			&user.IsActive, &user.CreatedAt, &user.UpdatedAt,
+			&user.Role.ID, &user.Role.Name, &user.Role.Description,
+		); err != nil {
+			return nil, fmt.Errorf("UserRepo.List: %w", err)
+		}
+		users = append(users, user)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("UserRepo.List: %w", err)
+	}
+	return users, nil
+}
+
+// Update полностью обновляет данные пользователя, включая роль (в одной транзакции).
 func (r *UserRepo) Update(ctx context.Context, user *entity.User) error {
-	_, err := r.pool.Exec(ctx,
-		`UPDATE users SET is_active = $1, updated_at = $2 WHERE id = $3`,
-		user.IsActive, user.UpdatedAt, user.ID,
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("UserRepo.Update: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Обновляем основные поля
+	_, err = tx.Exec(ctx,
+		`UPDATE users SET username=$1, email=$2, password_hash=$3, is_active=$4, updated_at=$5 WHERE id=$6`,
+		user.Username, user.Email, user.PasswordHash, user.IsActive, user.UpdatedAt, user.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("UserRepo.Update: %w", err)
 	}
-	return nil
+
+	// Обновляем роль: удаляем старую и вставляем новую
+	_, err = tx.Exec(ctx, `DELETE FROM user_roles WHERE user_id = $1`, user.ID)
+	if err != nil {
+		return fmt.Errorf("UserRepo.Update: %w", err)
+	}
+
+	var roleID int
+	err = tx.QueryRow(ctx,
+		`SELECT id FROM roles WHERE name = $1`, user.Role.Name,
+	).Scan(&roleID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("role not found")
+		}
+		return fmt.Errorf("UserRepo.Update: %w", err)
+	}
+
+	_, err = tx.Exec(ctx,
+		`INSERT INTO user_roles(user_id, role_id) VALUES($1, $2)`,
+		user.ID, roleID,
+	)
+	if err != nil {
+		return fmt.Errorf("UserRepo.Update: %w", err)
+	}
+
+	return tx.Commit(ctx)
 }
 
-// AssignRole заменяет текущую роль пользователя на новую.
+// AssignRole изменяет роль пользователя, соблюдая правило "1 пользователь = 1 роль".
+// Удаляет старую роль и назначает новую.
 func (r *UserRepo) AssignRole(ctx context.Context, userID int, roleName string) error {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -173,15 +254,17 @@ func (r *UserRepo) AssignRole(ctx context.Context, userID int, roleName string) 
 	}
 	defer tx.Rollback(ctx)
 
-	// Удаляем все существующие роли пользователя
+	// Удаляем старую роль
 	_, err = tx.Exec(ctx, `DELETE FROM user_roles WHERE user_id = $1`, userID)
 	if err != nil {
 		return fmt.Errorf("UserRepo.AssignRole: %w", err)
 	}
 
-	// Находим ID роли по имени
+	// Получаем ID новой роли
 	var roleID int
-	err = tx.QueryRow(ctx, `SELECT id FROM roles WHERE name = $1`, roleName).Scan(&roleID)
+	err = tx.QueryRow(ctx,
+		`SELECT id FROM roles WHERE name = $1`, roleName,
+	).Scan(&roleID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("role not found")
@@ -190,28 +273,13 @@ func (r *UserRepo) AssignRole(ctx context.Context, userID int, roleName string) 
 	}
 
 	// Назначаем новую роль
-	_, err = tx.Exec(ctx, `INSERT INTO user_roles(user_id, role_id) VALUES($1, $2)`, userID, roleID)
+	_, err = tx.Exec(ctx,
+		`INSERT INTO user_roles(user_id, role_id) VALUES($1, $2)`,
+		userID, roleID,
+	)
 	if err != nil {
 		return fmt.Errorf("UserRepo.AssignRole: %w", err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("UserRepo.AssignRole: %w", err)
-	}
-	return nil
-}
-
-// contains проверяет, содержится ли подстрока sub в строке s.
-// Используется для анализа имени ограничения.
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && searchSubstring(s, sub)
-}
-
-func searchSubstring(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
+	return tx.Commit(ctx)
 }

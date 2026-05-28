@@ -2,225 +2,116 @@
 package handler
 
 import (
-	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/go-playground/validator/v10"
 
-	"github.com/artyomstank/virtual_deanery/apperror"
 	"github.com/artyomstank/virtual_deanery/internal/domain/service"
 	"github.com/artyomstank/virtual_deanery/internal/transport/http/dto"
-	"github.com/artyomstank/virtual_deanery/pkg/httputil"
+	"github.com/artyomstank/virtual_deanery/internal/transport/http/middleware"
+	"github.com/artyomstank/virtual_deanery/pkg/jwt"
 	"github.com/artyomstank/virtual_deanery/pkg/logger"
 )
 
-// UserHandler обрабатывает HTTP-запросы, связанные с пользователями.
+// UserHandler обрабатывает запросы, связанные с аутентификацией и собственным профилем.
 type UserHandler struct {
-	svc       service.UserService
-	logger    *logger.Logger
-	validator *validator.Validate
+	userService service.UserService
+	jwtManager  *jwt.Manager
+	logger      *logger.Logger
 }
 
-// NewUserHandler создаёт новый экземпляр UserHandler.
-func NewUserHandler(svc service.UserService, logger *logger.Logger) *UserHandler {
+func NewUserHandler(userService service.UserService, jwtManager *jwt.Manager, log *logger.Logger) *UserHandler {
 	return &UserHandler{
-		svc:       svc,
-		logger:    logger,
-		validator: validator.New(),
+		userService: userService,
+		jwtManager:  jwtManager,
+		logger:      log,
 	}
 }
 
-// RegisterUser обрабатывает POST /api/v1/users/register.
-// Регистрирует нового пользователя в системе.
-// Новому пользователю по умолчанию назначается роль "student" если не указана.
+// RegisterUser обрабатывает публичную регистрацию.
 func (h *UserHandler) RegisterUser(c *gin.Context) {
 	var req dto.RegisterUserRequest
-
-	// Парсим JSON из тела запроса
-	if err := c.BindJSON(&req); err != nil {
-		h.logger.Warn("invalid request format", map[string]interface{}{"error": err})
-		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
-			Code:    http.StatusBadRequest,
-			Message: "invalid request format",
-		})
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Warnf("register: invalid request body: %v", err)
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Code: http.StatusBadRequest, Message: "некорректные данные"})
 		return
 	}
 
-	// Валидируем поля запроса
-	if err := h.validator.Struct(req); err != nil {
-		h.logger.Warn("validation failed", map[string]interface{}{"error": err})
-		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
-			Code:    http.StatusBadRequest,
-			Message: "validation failed: " + err.Error(),
-		})
-		return
-	}
-
-	// Вызываем сервис для регистрации
-	user, err := h.svc.Register(c.Request.Context(), service.RegisterInput{
-		Username: req.Username,
-		Email:    req.Email,
-		Password: req.Password,
-		RoleName: req.Role,
-	})
-
+	authResult, err := h.userService.Register(c.Request.Context(), req.Username, req.Email, req.Password, req.Role)
 	if err != nil {
-		var appErr *apperror.AppError
-		if errors.As(err, &appErr) {
-			c.JSON(appErr.Code, dto.ErrorResponse{
-				Code:    appErr.Code,
-				Message: appErr.Message,
-			})
-			return
+		h.logger.Errorf("register: %v", err)
+		status := http.StatusInternalServerError
+		if err == service.ErrUserAlreadyExists {
+			status = http.StatusConflict
 		}
-
-		h.logger.Error("register error", err, nil)
-		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
-			Code:    http.StatusInternalServerError,
-			Message: "internal server error",
-		})
+		c.JSON(status, dto.ErrorResponse{Code: status, Message: err.Error()})
 		return
 	}
 
-	// Возвращаем успешный ответ (201 Created)
-	response := dto.UserResponse{
-		ID:        user.ID,
-		Username:  user.Username,
-		Email:     user.Email,
-		Role:      user.Role.Name,
-		IsActive:  user.IsActive,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
+	resp := dto.AuthResponse{
+		AccessToken: authResult.AccessToken,
+		ExpiresAt:   authResult.ExpiresAt,
+		User:        userToResponse(*authResult.User),
 	}
-
-	c.JSON(http.StatusCreated, response)
-	h.logger.Info("user registered successfully", map[string]interface{}{"user_id": user.ID})
+	c.JSON(http.StatusCreated, resp)
 }
 
-// LoginUser обрабатывает POST /api/v1/users/login.
-// Аутентифицирует пользователя и возвращает JWT access-токен.
+// LoginUser обрабатывает вход.
 func (h *UserHandler) LoginUser(c *gin.Context) {
 	var req dto.LoginUserRequest
-
-	// Парсим JSON из тела запроса
-	if err := c.BindJSON(&req); err != nil {
-		h.logger.Warn("invalid request format", map[string]interface{}{"error": err})
-		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
-			Code:    http.StatusBadRequest,
-			Message: "invalid request format",
-		})
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Warnf("login: invalid request body: %v", err)
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Code: http.StatusBadRequest, Message: "некорректные данные"})
 		return
 	}
 
-	// Валидируем поля запроса
-	if err := h.validator.Struct(req); err != nil {
-		h.logger.Warn("validation failed", map[string]interface{}{"error": err})
-		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
-			Code:    http.StatusBadRequest,
-			Message: "validation failed",
-		})
-		return
-	}
-
-	// Вызываем сервис для логина
-	authResult, err := h.svc.Login(c.Request.Context(), service.LoginInput{
-		Email:    req.Email,
-		Password: req.Password,
-	})
-
+	authResult, err := h.userService.Login(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
-		var appErr *apperror.AppError
-		if errors.As(err, &appErr) {
-			c.JSON(appErr.Code, dto.ErrorResponse{
-				Code:    appErr.Code,
-				Message: appErr.Message,
-			})
-			return
+		h.logger.Errorf("login: %v", err)
+		status := http.StatusUnauthorized
+		if err == service.ErrInvalidCredentials {
+			status = http.StatusUnauthorized
+		} else if err == service.ErrUserInactive {
+			status = http.StatusForbidden
 		}
-
-		h.logger.Error("login error", err, nil)
-		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
-			Code:    http.StatusInternalServerError,
-			Message: "internal server error",
-		})
+		c.JSON(status, dto.ErrorResponse{Code: status, Message: err.Error()})
 		return
 	}
 
-	// Возвращаем успешный ответ (200 OK)
-	response := dto.AuthResponse{
-		AccessToken: authResult.Token,
+	resp := dto.AuthResponse{
+		AccessToken: authResult.AccessToken,
 		ExpiresAt:   authResult.ExpiresAt,
-		User: dto.UserResponse{
-			ID:        authResult.User.ID,
-			Username:  authResult.User.Username,
-			Email:     authResult.User.Email,
-			Role:      authResult.User.Role.Name,
-			IsActive:  authResult.User.IsActive,
-			CreatedAt: authResult.User.CreatedAt,
-			UpdatedAt: authResult.User.UpdatedAt,
-		},
+		User:        userToResponse(*authResult.User),
 	}
-
-	c.JSON(http.StatusOK, response)
-	h.logger.Info("user logged in successfully", map[string]interface{}{"user_id": authResult.User.ID})
+	c.JSON(http.StatusOK, resp)
 }
 
-// GetUser обрабатывает GET /api/v1/users/:id.
-// Возвращает профиль пользователя по ID.
-func (h *UserHandler) GetUser(c *gin.Context) {
-	// Получаем ID из URL параметра
-	idStr := c.Param("id")
-	userID, err := strconv.Atoi(idStr)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
-			Code:    http.StatusBadRequest,
-			Message: "invalid user id",
-		})
+// GetMe возвращает профиль текущего пользователя.
+func (h *UserHandler) GetMe(c *gin.Context) {
+	userID, exists := c.Get(middleware.UserIDKey)
+	if !exists {
+		h.logger.Error("GetMe: userID not found in context", nil, nil)
+		c.JSON(http.StatusUnauthorized, dto.ErrorResponse{Code: http.StatusUnauthorized, Message: "не авторизован"})
 		return
 	}
 
-	// Получаем профиль пользователя из сервиса
-	profile, err := h.svc.GetProfile(c.Request.Context(), userID)
+	uid, ok := userID.(int)
+	if !ok {
+		h.logger.Error("GetMe: invalid userID type", nil, nil)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Code: http.StatusInternalServerError, Message: "внутренняя ошибка"})
+		return
+	}
+
+	user, err := h.userService.GetUserByID(c.Request.Context(), uid)
 	if err != nil {
-		var appErr *apperror.AppError
-		if errors.As(err, &appErr) {
-			c.JSON(appErr.Code, dto.ErrorResponse{
-				Code:    appErr.Code,
-				Message: appErr.Message,
-			})
-			return
+		h.logger.Errorf("GetMe: %v", err)
+		status := http.StatusNotFound
+		if err != service.ErrUserNotFound {
+			status = http.StatusInternalServerError
 		}
-
-		h.logger.Error("get user error", err, nil)
-		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
-			Code:    http.StatusInternalServerError,
-			Message: "internal server error",
-		})
+		c.JSON(status, dto.ErrorResponse{Code: status, Message: err.Error()})
 		return
 	}
 
-	// Возвращаем профиль пользователя
-	response := dto.UserResponse{
-		ID:       profile.ID,
-		Username: profile.Username,
-		Email:    profile.Email,
-		Role:     profile.Role,
-		IsActive: profile.IsActive,
-	}
-
-	c.JSON(http.StatusOK, response)
-}
-
-// UpdateUser обрабатывает PATCH /api/v1/users/:id.
-// Обновляет профиль пользователя.
-func (h *UserHandler) UpdateUser(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, httputil.ErrorResponse{Code: http.StatusNotImplemented, Message: "not implemented"})
-}
-
-// DeleteUser обрабатывает DELETE /api/v1/users/:id.
-// Удаляет пользователя.
-func (h *UserHandler) DeleteUser(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, httputil.ErrorResponse{Code: http.StatusNotImplemented, Message: "not implemented"})
+	c.JSON(http.StatusOK, userToResponse(*user))
 }

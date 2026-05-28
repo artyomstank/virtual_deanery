@@ -2,167 +2,117 @@
 package handler
 
 import (
-	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/go-playground/validator/v10"
 
-	"github.com/artyomstank/virtual_deanery/apperror"
+	"github.com/artyomstank/virtual_deanery/internal/domain/entity"
 	"github.com/artyomstank/virtual_deanery/internal/domain/service"
 	"github.com/artyomstank/virtual_deanery/internal/transport/http/dto"
 	"github.com/artyomstank/virtual_deanery/pkg/logger"
 )
 
-// ACLHandler обрабатывает HTTP-запросы, связанные с управлением ACL.
+// ACLHandler обрабатывает запросы управления правами доступа.
 type ACLHandler struct {
-	svc       service.ACLService
-	logger    *logger.Logger
-	validator *validator.Validate
+	aclService service.ACLService
+	logger     *logger.Logger
 }
 
-// NewACLHandler создаёт новый экземпляр ACLHandler.
-func NewACLHandler(svc service.ACLService, logger *logger.Logger) *ACLHandler {
+func NewACLHandler(aclService service.ACLService, log *logger.Logger) *ACLHandler {
 	return &ACLHandler{
-		svc:       svc,
-		logger:    logger,
-		validator: validator.New(),
+		aclService: aclService,
+		logger:     log,
 	}
 }
 
-// GetRoles обрабатывает GET /api/v1/admin/roles.
-// Возвращает список всех ролей в системе.
+// GetRoles возвращает список всех ролей.
 func (h *ACLHandler) GetRoles(c *gin.Context) {
-	roles, err := h.svc.GetAllRoles(c.Request.Context())
+	roles, err := h.aclService.GetAllRoles(c.Request.Context())
 	if err != nil {
-		h.logger.Error("get roles error", err, nil)
-		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
-			Code:    http.StatusInternalServerError,
-			Message: "internal server error",
-		})
+		h.logger.Errorf("get roles: %v", err)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Code: http.StatusInternalServerError, Message: "ошибка получения ролей"})
 		return
 	}
 
-	responses := make([]dto.RoleResponse, len(roles))
-	for i, role := range roles {
-		responses[i] = dto.RoleResponse{
-			ID:          role.ID,
-			Name:        role.Name,
-			Description: role.Description,
-		}
+	resp := make([]dto.RoleResponse, 0, len(roles))
+	for _, r := range roles {
+		resp = append(resp, dto.RoleResponse{
+			ID:          r.ID,
+			Name:        r.Name,
+			Description: r.Description,
+		})
 	}
-
-	c.JSON(http.StatusOK, responses)
+	c.JSON(http.StatusOK, resp)
 }
 
-// UpdateACLEntry обрабатывает PATCH /api/v1/admin/acl.
-// Обновляет запись ACL для пары роль+ресурс.
+// GetACLByRole возвращает список ACL-записей для указанной роли.
+func (h *ACLHandler) GetACLByRole(c *gin.Context) {
+	roleID, err := strconv.Atoi(c.Param("role"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Code: http.StatusBadRequest, Message: "неверный идентификатор роли"})
+		return
+	}
+
+	entries, err := h.aclService.GetACLByRole(c.Request.Context(), roleID)
+	if err != nil {
+		h.logger.Errorf("get acl by role: %v", err)
+		status := http.StatusInternalServerError
+		if err == service.ErrRoleNotFound {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, dto.ErrorResponse{Code: status, Message: err.Error()})
+		return
+	}
+
+	resp := make([]dto.ACLEntryResponse, 0, len(entries))
+	for _, e := range entries {
+		resp = append(resp, dto.ACLEntryResponse{
+			RoleID:     e.RoleID,
+			ResourceID: e.ResourceID,
+			Resource: dto.ResourceResponse{
+				ID:          e.Resource.ID,
+				Name:        e.Resource.Name,
+				Description: e.Resource.Description,
+			},
+			CanRead:   e.CanRead,
+			CanWrite:  e.CanWrite,
+			CanDelete: e.CanDelete,
+		})
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// UpdateACLEntry обновляет одну запись ACL (сбрасывает кэш при необходимости).
 func (h *ACLHandler) UpdateACLEntry(c *gin.Context) {
 	var req dto.ACLEntryRequest
-
-	// Парсим JSON из тела запроса
-	if err := c.BindJSON(&req); err != nil {
-		h.logger.Warn("invalid request format", map[string]interface{}{"error": err})
-		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
-			Code:    http.StatusBadRequest,
-			Message: "invalid request format",
-		})
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Warnf("update acl: invalid body: %v", err)
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Code: http.StatusBadRequest, Message: "некорректные данные"})
 		return
 	}
 
-	// Валидируем поля запроса
-	if err := h.validator.Struct(req); err != nil {
-		h.logger.Warn("validation failed", map[string]interface{}{"error": err})
-		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
-			Code:    http.StatusBadRequest,
-			Message: "validation failed: " + err.Error(),
-		})
-		return
-	}
-
-	// Получаем user_id из контекста (установленного AuthMiddleware)
-	userIDInterface, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
-			Code:    http.StatusUnauthorized,
-			Message: "user_id not found in context",
-		})
-		return
-	}
-
-	userID, ok := userIDInterface.(int)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
-			Code:    http.StatusUnauthorized,
-			Message: "invalid user_id",
-		})
-		return
-	}
-
-	// Вызываем сервис для обновления ACL
-	err := h.svc.UpdateACLEntry(c.Request.Context(), userID, req.RoleID, req.ResourceID, req.CanRead, req.CanWrite, req.CanDelete)
-	if err != nil {
-		var appErr *apperror.AppError
-		if errors.As(err, &appErr) {
-			c.JSON(appErr.Code, dto.ErrorResponse{
-				Code:    appErr.Code,
-				Message: appErr.Message,
-			})
-			return
+	if err := h.aclService.UpdateACLEntry(c.Request.Context(), req.RoleID, req.ResourceID, req.CanRead, req.CanWrite, req.CanDelete); err != nil {
+		h.logger.Errorf("update acl: %v", err)
+		status := http.StatusInternalServerError
+		if err == service.ErrRoleNotFound || err == service.ErrResourceNotFound {
+			status = http.StatusNotFound
 		}
-
-		h.logger.Error("update acl error", err, nil)
-		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
-			Code:    http.StatusInternalServerError,
-			Message: "internal server error",
-		})
+		c.JSON(status, dto.ErrorResponse{Code: status, Message: err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, dto.ErrorResponse{
-		Code:    http.StatusOK,
-		Message: "ACL entry updated successfully",
-	})
-	h.logger.Info("ACL entry updated", map[string]interface{}{"user_id": userID, "role_id": req.RoleID, "resource_id": req.ResourceID})
+	c.JSON(http.StatusOK, gin.H{"status": "acl updated"})
 }
 
-// GetACLByRole обрабатывает GET /api/v1/admin/acl/:role.
-// Возвращает все ACL записи для указанной роли.
-func (h *ACLHandler) GetACLByRole(c *gin.Context) {
-	role := c.Param("role")
-	if role == "" {
-		c.JSON(http.StatusBadRequest, dto.ErrorResponse{
-			Code:    http.StatusBadRequest,
-			Message: "role parameter is required",
-		})
-		return
+func userToResponse(u entity.User) dto.UserResponse {
+	return dto.UserResponse{
+		ID:        u.ID,
+		Username:  u.Username,
+		Email:     u.Email,
+		Role:      u.Role.Name,
+		IsActive:  u.IsActive,
+		CreatedAt: u.CreatedAt,
+		UpdatedAt: u.UpdatedAt,
 	}
-
-	entries, err := h.svc.GetACLByRole(c.Request.Context(), role)
-	if err != nil {
-		h.logger.Error("get acl by role error", err, nil)
-		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
-			Code:    http.StatusInternalServerError,
-			Message: "internal server error",
-		})
-		return
-	}
-
-	responses := make([]dto.ACLEntryResponse, len(entries))
-	for i, entry := range entries {
-		responses[i] = dto.ACLEntryResponse{
-			RoleID:     entry.RoleID,
-			ResourceID: entry.ResourceID,
-			Resource: dto.ResourceResponse{
-				ID:          entry.Resource.ID,
-				Name:        entry.Resource.Name,
-				Description: entry.Resource.Description,
-			},
-			CanRead:   entry.CanRead,
-			CanWrite:  entry.CanWrite,
-			CanDelete: entry.CanDelete,
-		}
-	}
-
-	c.JSON(http.StatusOK, responses)
 }

@@ -1,6 +1,8 @@
 package logger
 
 import (
+	"fmt"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -83,6 +85,16 @@ func (l *Logger) Error(msg string, err error, fields map[string]any) {
 		zapFields = append(zapFields, zap.Error(err))
 	}
 	l.logger.Error(msg, zapFields...)
+}
+
+// Warnf записывает отформатированное предупреждение (подобно fmt.Printf).
+func (l *Logger) Warnf(format string, args ...any) {
+	l.logger.Warn(fmt.Sprintf(format, args...))
+}
+
+// Errorf записывает отформатированное сообщение об ошибке (подобно fmt.Printf).
+func (l *Logger) Errorf(format string, args ...any) {
+	l.logger.Error(fmt.Sprintf(format, args...))
 }
 
 // With возвращает новый Logger с добавленным постоянным полем key=value.

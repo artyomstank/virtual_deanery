@@ -30,7 +30,6 @@ type Config struct {
 
 	// Application behaviour
 	LogLevel string `env:"LOG_LEVEL" env-default:"info"`
-	AppEnv   string `env:"APP_ENV"   env-default:"production"`
 }
 
 // Load reads configuration from a .env file (if present) and then from
@@ -79,9 +78,4 @@ func (c *Config) DSN() string {
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		c.DBHost, c.DBPort, c.DBUser, c.DBPassword, c.DBName, c.DBSSLMode,
 	)
-}
-
-// IsDev reports whether the application is running in development mode.
-func (c *Config) IsDev() bool {
-	return c.AppEnv == "development"
 }

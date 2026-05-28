@@ -78,3 +78,8 @@ func (m *Manager) Parse(tokenStr string) (*Claims, error) {
 	// Проверка НЕ НУЖНА - ParseWithClaims уже всё проверил
 	return claims, nil
 }
+
+// ExpireHours возвращает время жизни токена в часах.
+func (m *Manager) ExpireHours() int {
+	return m.expireHours
+}
