@@ -60,6 +60,21 @@ services:
     networks:
       - myapp_network
 
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: myapp_frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: "http://localhost:8088"
+    networks:
+      - myapp_network
+    depends_on:
+      - app
+    restart: unless-stopped
+
 volumes:
   postgres_data:
 

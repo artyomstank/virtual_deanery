@@ -1,6 +1,10 @@
 # Тестирование
 
 
+docker-compose up -d postgres app migrate
+
+
+
 ```bash
 
 # Запустить Docker контейнеры
