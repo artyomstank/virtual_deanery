@@ -224,3 +224,53 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 func (h *UserHandler) DeleteUser(c *gin.Context) {
 	c.JSON(http.StatusNotImplemented, httputil.ErrorResponse{Code: http.StatusNotImplemented, Message: "not implemented"})
 }
+
+// LoginPublic обрабатывает POST /auth/login.
+// Возвращает ответ в формате, ожидаемом фронтендом: { access_token, user: { id, name, email, role, status } }.
+func (h *UserHandler) LoginPublic(c *gin.Context) {
+	var req dto.LoginUserRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Code: http.StatusBadRequest, Message: "invalid request format"})
+		return
+	}
+	if err := h.validator.Struct(req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Code: http.StatusBadRequest, Message: "validation failed"})
+		return
+	}
+
+	authResult, err := h.svc.Login(c.Request.Context(), service.LoginInput{
+		Email:    req.Email,
+		Password: req.Password,
+	})
+	if err != nil {
+		var appErr *apperror.AppError
+		if errors.As(err, &appErr) {
+			c.JSON(appErr.Code, dto.ErrorResponse{Code: appErr.Code, Message: appErr.Message})
+			return
+		}
+		h.logger.Error("login error", err, nil)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Code: 500, Message: "internal server error"})
+		return
+	}
+
+	status := authResult.User.Status
+	if status == "" {
+		if authResult.User.IsActive {
+			status = "active"
+		} else {
+			status = "blocked"
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"access_token": authResult.Token,
+		"user": gin.H{
+			"id":         authResult.User.ID,
+			"name":       authResult.User.Username,
+			"email":      authResult.User.Email,
+			"role":       authResult.User.Role.Name,
+			"status":     status,
+			"created_at": authResult.User.CreatedAt,
+		},
+	})
+}

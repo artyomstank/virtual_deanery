@@ -135,7 +135,7 @@ export function DataManagementPage() {
     }
   };
 
-  const deleteEntity = async (entity: Entity, id: string) => {
+  const deleteEntity = async (entity: Entity, id: number | string) => {
     const path = entity === "exams" ? "/admin/exam-schedule" : `/admin/${entity}`;
     try {
       await apiClient.delete(`${path}/${id}`);
@@ -185,6 +185,7 @@ export function DataManagementPage() {
             <Select value={studentStatusFilter} onValueChange={setStudentStatusFilter}>
               <SelectItem value="all">Все статусы</SelectItem>
               <SelectItem value="active">Активен</SelectItem>
+              <SelectItem value="on_leave">Академотпуск</SelectItem>
               <SelectItem value="expelled">Отчислен</SelectItem>
             </Select>
           </div>
@@ -206,7 +207,7 @@ export function DataManagementPage() {
                     <TableCell>{student.name}</TableCell>
                     <TableCell>{student.group}</TableCell>
                     <TableCell>{student.course}</TableCell>
-                    <TableCell>{student.status === "active" ? "Активен" : "Отчислен"}</TableCell>
+                    <TableCell>{student.status === "active" ? "Активен" : student.status === "on_leave" ? "Академотпуск" : "Отчислен"}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-2">
                         <Button size="sm" variant="secondary"><Edit2 size={14} />Редактировать</Button>
@@ -289,7 +290,7 @@ function fieldLabel(key: string) {
   return labels[key] || key;
 }
 
-function renderRows(items: any[], entity: Entity, loading: boolean, openModal: (entity: Entity, item?: any) => void, deleteEntity: (entity: Entity, id: string) => void) {
+function renderRows(items: any[], entity: Entity, loading: boolean, openModal: (entity: Entity, item?: any) => void, deleteEntity: (entity: Entity, id: number | string) => void) {
   if (loading) return <TableRow isHoverable={false}><TableCell colSpan={6} className="py-8 text-center">Загрузка...</TableCell></TableRow>;
   if (items.length === 0) return <TableEmpty message="Данные не найдены" />;
   return items.map((item) => (

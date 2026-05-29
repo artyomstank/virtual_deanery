@@ -50,6 +50,7 @@ type User struct {
 	Username     string
 	Email        string
 	PasswordHash string // bcrypt-хэш, cost >= 12; открытый пароль в домене не хранится
+	Status       string // "active" | "blocked" | "pending"
 	IsActive     bool
 	CreatedAt    time.Time
 	UpdatedAt    time.Time

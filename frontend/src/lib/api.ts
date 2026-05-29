@@ -12,10 +12,10 @@ import {
   User,
 } from "../types/api";
 
-const API_BASE = "http://localhost:8080";
+const API_BASE = "http://localhost:8088";
 
 const mockUser: User = {
-  id: "u-admin",
+  id: 1,
   name: "Анна Смирнова",
   email: "admin@dekanat.local",
   role: "admin",
@@ -26,112 +26,59 @@ const mockUser: User = {
 const mockState = {
   users: [
     mockUser,
-    {
-      id: "u-teacher-1",
-      name: "Мария Иванова",
-      email: "ivanova@dekanat.local",
-      role: "teacher",
-      status: "active",
-      created_at: "2026-01-12T11:20:00.000Z",
-    },
-    {
-      id: "u-teacher-2",
-      name: "Дмитрий Соколов",
-      email: "sokolov@dekanat.local",
-      role: "teacher",
-      status: "pending",
-      created_at: "2026-02-04T10:15:00.000Z",
-    },
-    {
-      id: "u-student-1",
-      name: "Иван Петров",
-      email: "petrov@student.local",
-      role: "student",
-      status: "active",
-      created_at: "2026-01-18T08:30:00.000Z",
-    },
-    {
-      id: "u-student-2",
-      name: "Елена Кузнецова",
-      email: "kuznetsova@student.local",
-      role: "student",
-      status: "blocked",
-      created_at: "2026-02-01T13:45:00.000Z",
-    },
-    {
-      id: "u-dean-1",
-      name: "Олег Васильев",
-      email: "dean@dekanat.local",
-      role: "dean",
-      status: "active",
-      created_at: "2026-01-09T14:00:00.000Z",
-    },
+    { id: 2, name: "Мария Иванова", email: "ivanova@dekanat.local", role: "teacher", status: "active", created_at: "2026-01-12T11:20:00.000Z" },
+    { id: 3, name: "Дмитрий Соколов", email: "sokolov@dekanat.local", role: "teacher", status: "pending", created_at: "2026-02-04T10:15:00.000Z" },
+    { id: 4, name: "Иван Петров", email: "petrov@student.local", role: "student", status: "active", created_at: "2026-01-18T08:30:00.000Z" },
+    { id: 5, name: "Елена Кузнецова", email: "kuznetsova@student.local", role: "student", status: "blocked", created_at: "2026-02-01T13:45:00.000Z" },
+    { id: 6, name: "Олег Васильев", email: "dean@dekanat.local", role: "dean", status: "active", created_at: "2026-01-09T14:00:00.000Z" },
   ] as User[],
   audit: [
-    { id: "a1", user_id: "u-admin", user_name: "Анна Смирнова", action: "Создала пользователя", timestamp: "2026-05-29T08:20:00.000Z" },
-    { id: "a2", user_id: "u-admin", user_name: "Анна Смирнова", action: "Обновила расписание экзаменов", timestamp: "2026-05-29T08:05:00.000Z" },
-    { id: "a3", user_id: "u-dean-1", user_name: "Олег Васильев", action: "Сформировал отчёт посещаемости", timestamp: "2026-05-28T16:40:00.000Z" },
-    { id: "a4", user_id: "u-admin", user_name: "Анна Смирнова", action: "Подтвердила преподавателя", timestamp: "2026-05-28T14:15:00.000Z" },
+    { id: 1, user_id: 1, user_name: "Анна Смирнова", action: "Создала пользователя", timestamp: "2026-05-29T08:20:00.000Z" },
+    { id: 2, user_id: 1, user_name: "Анна Смирнова", action: "Обновила расписание экзаменов", timestamp: "2026-05-29T08:05:00.000Z" },
+    { id: 3, user_id: 6, user_name: "Олег Васильев", action: "Сформировал отчёт посещаемости", timestamp: "2026-05-28T16:40:00.000Z" },
+    { id: 4, user_id: 1, user_name: "Анна Смирнова", action: "Подтвердила преподавателя", timestamp: "2026-05-28T14:15:00.000Z" },
   ] as AuditLog[],
   teachers: {
-    "u-teacher-1": {
-      id: "t1",
-      user_id: "u-teacher-1",
-      name: "Мария Иванова",
-      email: "ivanova@dekanat.local",
-      department: "Прикладная информатика",
-      academic_degree: "к.т.н.",
-      employee_id: "T-1024",
-      phone: "+7 900 123-45-67",
-    },
-    "u-teacher-2": {
-      id: "t2",
-      user_id: "u-teacher-2",
-      name: "Дмитрий Соколов",
-      email: "sokolov@dekanat.local",
-      department: "Математический анализ",
-      academic_degree: "к.ф.-м.н.",
-      employee_id: "T-1188",
-      phone: "+7 900 765-43-21",
-    },
+    "2": { id: 1, user_id: 2, name: "Мария Иванова", email: "ivanova@dekanat.local", department: "Прикладная информатика", academic_degree: "к.т.н.", employee_id: "T-1024", phone: "+7 900 123-45-67" },
+    "3": { id: 2, user_id: 3, name: "Дмитрий Соколов", email: "sokolov@dekanat.local", department: "Математический анализ", academic_degree: "к.ф.-м.н.", employee_id: "T-1188", phone: "+7 900 765-43-21" },
   } as Record<string, Teacher>,
   employment: {
-    "u-teacher-1": [
-      { id: "e1", position: "Доцент", employment_type: "Основная", start_date: "2023-09-01", notes: "Кафедра ПИ" },
-      { id: "e2", position: "Старший преподаватель", employment_type: "Основная", start_date: "2021-09-01", end_date: "2023-08-31", notes: "Повышение" },
+    "2": [
+      { id: 1, position: "Доцент", employment_type: "Основная", start_date: "2023-09-01", notes: "Кафедра ПИ" },
+      { id: 2, position: "Старший преподаватель", employment_type: "Основная", start_date: "2021-09-01", end_date: "2023-08-31", notes: "Повышение" },
     ],
   } as Record<string, EmploymentRecord[]>,
   disciplines: {
-    "u-teacher-1": [
-      { id: "d1", name: "Базы данных", group: "ИС-21", semester: "6" },
-      { id: "d2", name: "Веб-разработка", group: "ИС-22", semester: "4" },
+    "2": [
+      { id: 1, name: "Базы данных", group: "ИС-21", semester: "6" },
+      { id: 2, name: "Веб-разработка", group: "ИС-22", semester: "4" },
     ],
   },
   students: [
-    { id: "s1", name: "Иван Петров", group: "ИС-21", course: 3, status: "active", registration_date: "2023-09-01" },
-    { id: "s2", name: "Елена Кузнецова", group: "ИС-22", course: 2, status: "active", registration_date: "2024-09-01" },
-    { id: "s3", name: "Павел Орлов", group: "ПИ-11", course: 1, status: "expelled", registration_date: "2025-09-01" },
+    { id: 1, name: "Иван Петров", group: "ИС-21", course: 3, status: "active", registration_date: "2023-09-01" },
+    { id: 2, name: "Елена Кузнецова", group: "ИС-22", course: 2, status: "active", registration_date: "2024-09-01" },
+    { id: 3, name: "Павел Орлов", group: "ПИ-11", course: 1, status: "expelled", registration_date: "2025-09-01" },
   ] as Student[],
   groups: [
-    { id: "g1", name: "ИС-21", course: 3, curator_id: "u-teacher-1", curator_name: "Мария Иванова", student_count: 24 },
-    { id: "g2", name: "ИС-22", course: 2, curator_id: "u-teacher-2", curator_name: "Дмитрий Соколов", student_count: 27 },
-    { id: "g3", name: "ПИ-11", course: 1, curator_id: "u-teacher-1", curator_name: "Мария Иванова", student_count: 30 },
+    { id: 1, name: "ИС-21", course: 3, curator_id: 2, curator_name: "Мария Иванова", student_count: 24 },
+    { id: 2, name: "ИС-22", course: 2, curator_id: 3, curator_name: "Дмитрий Соколов", student_count: 27 },
+    { id: 3, name: "ПИ-11", course: 1, curator_id: 2, curator_name: "Мария Иванова", student_count: 30 },
   ] as Group[],
   exams: [
-    { id: "ex1", discipline: "Базы данных", date: "2026-06-10", time: "10:00", room: "305", teacher_id: "u-teacher-1", teacher_name: "Мария Иванова" },
-    { id: "ex2", discipline: "Математический анализ", date: "2026-06-12", time: "12:00", room: "201", teacher_id: "u-teacher-2", teacher_name: "Дмитрий Соколов" },
+    { id: 1, discipline: "Базы данных", date: "2026-06-10", time: "10:00", room: "305", teacher_id: 2, teacher_name: "Мария Иванова" },
+    { id: 2, discipline: "Математический анализ", date: "2026-06-12", time: "12:00", room: "201", teacher_id: 3, teacher_name: "Дмитрий Соколов" },
   ] as ExamSchedule[],
   departments: [
-    { id: "dep1", name: "Прикладная информатика", office: "305", head_id: "u-dean-1", head_name: "Олег Васильев" },
-    { id: "dep2", name: "Математический анализ", office: "201", head_id: "u-teacher-2", head_name: "Дмитрий Соколов" },
+    { id: 1, name: "Прикладная информатика", office: "305", head_id: 6, head_name: "Олег Васильев" },
+    { id: 2, name: "Математический анализ", office: "201", head_id: 3, head_name: "Дмитрий Соколов" },
   ] as Department[],
   grades: [
-    { id: "gr1", student_name: "Иван Петров", discipline: "Базы данных", grade: 5, date: "2026-05-20" },
-    { id: "gr2", student_name: "Елена Кузнецова", discipline: "Веб-разработка", grade: 4, date: "2026-05-21" },
+    { id: 1, student_name: "Иван Петров", discipline: "Базы данных", grade: 5, date: "2026-05-20" },
+    { id: 2, student_name: "Елена Кузнецова", discipline: "Веб-разработка", grade: 4, date: "2026-05-21" },
   ] as GradeReport[],
   attendance: [
-    { id: "at1", student_name: "Иван Петров", group: "ИС-21", attendance_percent: 92 },
-    { id: "at2", student_name: "Елена Кузнецова", group: "ИС-22", attendance_percent: 86 },
+    { id: 1, student_name: "Иван Петров", group: "ИС-21", attendance_percent: 92 },
+    { id: 2, student_name: "Елена Кузнецова", group: "ИС-22", attendance_percent: 86 },
   ] as AttendanceReport[],
   acl: [] as ACLPermission[],
 };
@@ -152,7 +99,7 @@ function clone<T>(value: T): T {
 
 function addAudit(action: string) {
   mockState.audit.unshift({
-    id: `a-${Date.now()}`,
+    id: Date.now(),
     user_id: mockUser.id,
     user_name: mockUser.name,
     action,
@@ -160,8 +107,8 @@ function addAudit(action: string) {
   });
 }
 
-function nextId(prefix: string) {
-  return `${prefix}-${Date.now()}`;
+function nextId(_prefix: string): number {
+  return Date.now();
 }
 
 function mockResponse(method: string, path: string, data?: any) {
@@ -198,25 +145,29 @@ function mockResponse(method: string, path: string, data?: any) {
     return clone(user);
   }
 
+
   const userMatch = pathname.match(/^\/admin\/users\/([^/]+)$/);
   if (userMatch && method === "PUT") {
-    const user = mockState.users.find((item) => item.id === userMatch[1]);
+    const uid = Number(userMatch[1]);
+    const user = mockState.users.find((item) => item.id === uid);
     if (!user) throw { status: 404, message: "Пользователь не найден" };
     Object.assign(user, data);
-    if (mockState.teachers[user.id]) Object.assign(mockState.teachers[user.id], { name: user.name, email: user.email });
+    if (mockState.teachers[String(user.id)]) Object.assign(mockState.teachers[String(user.id)], { name: user.name, email: user.email });
     addAudit(`Обновила пользователя ${user.name}`);
     return clone(user);
   }
   if (userMatch && method === "DELETE") {
-    const user = mockState.users.find((item) => item.id === userMatch[1]);
-    mockState.users = mockState.users.filter((item) => item.id !== userMatch[1]);
+    const uid = Number(userMatch[1]);
+    const user = mockState.users.find((item) => item.id === uid);
+    mockState.users = mockState.users.filter((item) => item.id !== uid);
     addAudit(`Удалила пользователя ${user?.name || userMatch[1]}`);
     return null;
   }
 
   const userActionMatch = pathname.match(/^\/admin\/users\/([^/]+)\/(block|approve|reset-password)$/);
   if (userActionMatch && method === "PATCH") {
-    const user = mockState.users.find((item) => item.id === userActionMatch[1]);
+    const uid = Number(userActionMatch[1]);
+    const user = mockState.users.find((item) => item.id === uid);
     if (!user) throw { status: 404, message: "Пользователь не найден" };
     if (userActionMatch[2] === "block") user.status = user.status === "blocked" ? "active" : "blocked";
     if (userActionMatch[2] === "approve") user.status = "active";
@@ -227,7 +178,8 @@ function mockResponse(method: string, path: string, data?: any) {
   const teacherMatch = pathname.match(/^\/admin\/users\/([^/]+)\/teacher$/);
   if (teacherMatch && method === "GET") return clone(mockState.teachers[teacherMatch[1]] || null);
   if (teacherMatch && method === "PUT") {
-    mockState.teachers[teacherMatch[1]] = { ...(mockState.teachers[teacherMatch[1]] || { id: nextId("t"), user_id: teacherMatch[1] }), ...data };
+    const existing = mockState.teachers[teacherMatch[1]] || { id: nextId("t"), user_id: Number(teacherMatch[1]) };
+    mockState.teachers[teacherMatch[1]] = { ...existing, ...data };
     addAudit(`Обновила карточку преподавателя ${data.name}`);
     return clone(mockState.teachers[teacherMatch[1]]);
   }
@@ -247,7 +199,8 @@ function mockResponse(method: string, path: string, data?: any) {
   if (method === "GET" && pathname === "/admin/students") return { students: clone(mockState.students) };
   const studentMatch = pathname.match(/^\/admin\/students\/([^/]+)$/);
   if (studentMatch && method === "PATCH") {
-    const student = mockState.students.find((item) => item.id === studentMatch[1]);
+    const sid = Number(studentMatch[1]);
+    const student = mockState.students.find((item) => item.id === sid);
     if (!student) throw { status: 404, message: "Студент не найден" };
     Object.assign(student, data);
     addAudit(`Обновила студента ${student.name}`);
@@ -269,14 +222,16 @@ function mockResponse(method: string, path: string, data?: any) {
     }
     const itemMatch = pathname.match(new RegExp(`^${basePath}/([^/]+)$`));
     if (itemMatch && method === "PUT") {
-      const item = collection.list.find((entry) => entry.id === itemMatch[1]);
+      const iid = Number(itemMatch[1]);
+      const item = collection.list.find((entry) => entry.id === iid);
       if (!item) throw { status: 404, message: "Запись не найдена" };
       Object.assign(item, data);
       addAudit("Обновила запись учебных данных");
       return clone(item);
     }
     if (itemMatch && method === "DELETE") {
-      collection.list.splice(collection.list.findIndex((entry) => entry.id === itemMatch[1]), 1);
+      const iid = Number(itemMatch[1]);
+      collection.list.splice(collection.list.findIndex((entry) => entry.id === iid), 1);
       addAudit("Удалила запись учебных данных");
       return null;
     }
@@ -337,8 +292,7 @@ export class ApiClient {
       return response.json().catch(() => null);
     } catch (error: any) {
       if (error?.status) throw error;
-      this.useMock = true;
-      return mockResponse(method, path, data);
+      throw { status: 503, message: "Сервер недоступен. Проверьте подключение к бекенду." };
     }
   }
 
@@ -382,10 +336,7 @@ export class ApiClient {
       return response.blob();
     } catch (error: any) {
       if (error?.status) throw error;
-      this.useMock = true;
-      return new Blob(["Демо-экспорт;данные\n"], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
+      throw { status: 503, message: "Сервер недоступен." };
     }
   }
 }

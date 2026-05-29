@@ -78,7 +78,7 @@ func (r *UserRepo) Create(ctx context.Context, user *entity.User) error {
 // GetByID возвращает пользователя с указанным ID вместе с его ролью.
 func (r *UserRepo) GetByID(ctx context.Context, id int) (*entity.User, error) {
 	query := `
-		SELECT u.id, u.username, u.email, u.password_hash, u.is_active,
+		SELECT u.id, u.username, u.email, u.password_hash, u.status, u.is_active,
 		       u.created_at, u.updated_at, r.id, r.name, r.description
 		FROM users u
 		JOIN user_roles ur ON ur.user_id = u.id
@@ -89,7 +89,7 @@ func (r *UserRepo) GetByID(ctx context.Context, id int) (*entity.User, error) {
 	user := &entity.User{}
 	err := row.Scan(
 		&user.ID, &user.Username, &user.Email, &user.PasswordHash,
-		&user.IsActive, &user.CreatedAt, &user.UpdatedAt,
+		&user.Status, &user.IsActive, &user.CreatedAt, &user.UpdatedAt,
 		&user.Role.ID, &user.Role.Name, &user.Role.Description,
 	)
 	if err != nil {
@@ -104,7 +104,7 @@ func (r *UserRepo) GetByID(ctx context.Context, id int) (*entity.User, error) {
 // GetByEmail возвращает пользователя по email вместе с его ролью.
 func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*entity.User, error) {
 	query := `
-		SELECT u.id, u.username, u.email, u.password_hash, u.is_active,
+		SELECT u.id, u.username, u.email, u.password_hash, u.status, u.is_active,
 		       u.created_at, u.updated_at, r.id, r.name, r.description
 		FROM users u
 		JOIN user_roles ur ON ur.user_id = u.id
@@ -115,7 +115,7 @@ func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*entity.User, 
 	user := &entity.User{}
 	err := row.Scan(
 		&user.ID, &user.Username, &user.Email, &user.PasswordHash,
-		&user.IsActive, &user.CreatedAt, &user.UpdatedAt,
+		&user.Status, &user.IsActive, &user.CreatedAt, &user.UpdatedAt,
 		&user.Role.ID, &user.Role.Name, &user.Role.Description,
 	)
 	if err != nil {
@@ -130,7 +130,7 @@ func (r *UserRepo) GetByEmail(ctx context.Context, email string) (*entity.User, 
 // GetByUsername возвращает пользователя по username вместе с его ролью.
 func (r *UserRepo) GetByUsername(ctx context.Context, username string) (*entity.User, error) {
 	query := `
-		SELECT u.id, u.username, u.email, u.password_hash, u.is_active,
+		SELECT u.id, u.username, u.email, u.password_hash, u.status, u.is_active,
 		       u.created_at, u.updated_at, r.id, r.name, r.description
 		FROM users u
 		JOIN user_roles ur ON ur.user_id = u.id
@@ -141,7 +141,7 @@ func (r *UserRepo) GetByUsername(ctx context.Context, username string) (*entity.
 	user := &entity.User{}
 	err := row.Scan(
 		&user.ID, &user.Username, &user.Email, &user.PasswordHash,
-		&user.IsActive, &user.CreatedAt, &user.UpdatedAt,
+		&user.Status, &user.IsActive, &user.CreatedAt, &user.UpdatedAt,
 		&user.Role.ID, &user.Role.Name, &user.Role.Description,
 	)
 	if err != nil {

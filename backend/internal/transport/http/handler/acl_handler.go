@@ -9,6 +9,7 @@ import (
 	"github.com/go-playground/validator/v10"
 
 	"github.com/artyomstank/virtual_deanery/apperror"
+	postgres_repo "github.com/artyomstank/virtual_deanery/internal/repo/postgres"
 	"github.com/artyomstank/virtual_deanery/internal/domain/service"
 	"github.com/artyomstank/virtual_deanery/internal/transport/http/dto"
 	"github.com/artyomstank/virtual_deanery/pkg/logger"
@@ -17,14 +18,16 @@ import (
 // ACLHandler обрабатывает HTTP-запросы, связанные с управлением ACL.
 type ACLHandler struct {
 	svc       service.ACLService
+	adminRepo *postgres_repo.AdminRepo
 	logger    *logger.Logger
 	validator *validator.Validate
 }
 
 // NewACLHandler создаёт новый экземпляр ACLHandler.
-func NewACLHandler(svc service.ACLService, logger *logger.Logger) *ACLHandler {
+func NewACLHandler(svc service.ACLService, adminRepo *postgres_repo.AdminRepo, logger *logger.Logger) *ACLHandler {
 	return &ACLHandler{
 		svc:       svc,
+		adminRepo: adminRepo,
 		logger:    logger,
 		validator: validator.New(),
 	}
@@ -124,6 +127,52 @@ func (h *ACLHandler) UpdateACLEntry(c *gin.Context) {
 		Message: "ACL entry updated successfully",
 	})
 	h.logger.Info("ACL entry updated", map[string]interface{}{"user_id": userID, "role_id": req.RoleID, "resource_id": req.ResourceID})
+}
+
+// GetFullACL обрабатывает GET /admin/acl.
+// Возвращает полную матрицу прав для всех ролей и ресурсов.
+func (h *ACLHandler) GetFullACL(c *gin.Context) {
+	perms, err := h.adminRepo.GetFullACL(c.Request.Context())
+	if err != nil {
+		h.logger.Error("get full acl error", err, nil)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Code: 500, Message: "internal server error"})
+		return
+	}
+
+	items := make([]dto.ACLPermissionItem, len(perms))
+	for i, p := range perms {
+		items[i] = dto.ACLPermissionItem{
+			Resource: p.Resource, Role: p.Role,
+			Read: p.CanRead, Write: p.CanWrite, Delete: p.CanDelete,
+		}
+	}
+	c.JSON(http.StatusOK, dto.FullACLResponse{Permissions: items})
+}
+
+// UpdateACLByName обрабатывает PATCH /admin/acl.
+// Принимает { resource, role, permission, value } — формат фронтенда.
+func (h *ACLHandler) UpdateACLByName(c *gin.Context) {
+	var req dto.UpdateACLByNameRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Code: 400, Message: "invalid request"})
+		return
+	}
+	if err := h.validator.Struct(req); err != nil {
+		c.JSON(http.StatusBadRequest, dto.ErrorResponse{Code: 400, Message: err.Error()})
+		return
+	}
+
+	updated, err := h.adminRepo.UpdateACLByName(c.Request.Context(), req.Resource, req.Role, req.Permission, req.Value)
+	if err != nil {
+		h.logger.Error("update acl by name error", err, nil)
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Code: 500, Message: "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.ACLPermissionItem{
+		Resource: updated.Resource, Role: updated.Role,
+		Read: updated.CanRead, Write: updated.CanWrite, Delete: updated.CanDelete,
+	})
 }
 
 // GetACLByRole обрабатывает GET /api/v1/admin/acl/:role.

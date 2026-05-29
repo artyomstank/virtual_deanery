@@ -11,7 +11,7 @@ export interface AuthResponse {
 
 // User types
 export interface User {
-  id: string;
+  id: number;
   name: string;
   email: string;
   role: 'student' | 'teacher' | 'dean' | 'admin';
@@ -42,8 +42,8 @@ export interface AdminStats {
 
 // Audit log
 export interface AuditLog {
-  id: string;
-  user_id: string;
+  id: number;
+  user_id: number | null;
   user_name: string;
   action: string;
   timestamp: string;
@@ -56,8 +56,8 @@ export interface AuditResponse {
 
 // Teacher
 export interface Teacher {
-  id: string;
-  user_id: string;
+  id: number;
+  user_id: number;
   department: string;
   academic_degree: string;
   employee_id: string;
@@ -67,7 +67,7 @@ export interface Teacher {
 }
 
 export interface EmploymentRecord {
-  id: string;
+  id: number;
   position: string;
   employment_type: string;
   start_date: string;
@@ -75,49 +75,49 @@ export interface EmploymentRecord {
   notes?: string;
 }
 
-// Student
+// Student — backend normalises DB Russian statuses to English
 export interface Student {
-  id: string;
+  id: number;
   name: string;
   group: string;
   course: number;
-  status: 'active' | 'expelled';
+  status: 'active' | 'expelled' | 'on_leave' | string;
   registration_date: string;
 }
 
 // Group
 export interface Group {
-  id: string;
+  id: number;
   name: string;
   course: number;
-  curator_id: string;
+  curator_id: number | null;
   curator_name: string;
   student_count: number;
 }
 
 // Exam schedule
 export interface ExamSchedule {
-  id: string;
+  id: number;
   discipline: string;
   date: string;
   time: string;
   room: string;
-  teacher_id: string;
+  teacher_id: number | null;
   teacher_name: string;
 }
 
 // Department
 export interface Department {
-  id: string;
+  id: number;
   name: string;
   office: string;
-  head_id: string;
+  head_id: number | null;
   head_name: string;
 }
 
 // Reports
 export interface GradeReport {
-  id: string;
+  id: number;
   student_name: string;
   discipline: string;
   grade: number;
@@ -125,7 +125,7 @@ export interface GradeReport {
 }
 
 export interface AttendanceReport {
-  id: string;
+  id: number;
   student_name: string;
   group: string;
   attendance_percent: number;

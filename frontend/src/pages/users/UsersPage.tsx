@@ -46,7 +46,7 @@ export function UsersPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
-  const [selectedPending, setSelectedPending] = useState<string[]>([]);
+  const [selectedPending, setSelectedPending] = useState<number[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [actionUser, setActionUser] = useState<User | null>(null);
@@ -181,7 +181,7 @@ export function UsersPage() {
     }
   };
 
-  const approveUsers = async (ids: string[]) => {
+  const approveUsers = async (ids: number[]) => {
     try {
       await Promise.all(ids.map((id) => apiClient.patch(`/admin/users/${id}/approve`, {})));
       success(ids.length > 1 ? "Выбранные пользователи подтверждены" : "Пользователь подтверждён");
@@ -192,7 +192,7 @@ export function UsersPage() {
     }
   };
 
-  const rejectUsers = async (ids: string[]) => {
+  const rejectUsers = async (ids: number[]) => {
     try {
       await Promise.all(ids.map((id) => apiClient.delete(`/admin/users/${id}`)));
       success(ids.length > 1 ? "Выбранные пользователи отклонены" : "Пользователь отклонён");
