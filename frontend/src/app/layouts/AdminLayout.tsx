@@ -1,15 +1,17 @@
 import { Outlet } from "react-router-dom";
+import { Header } from "../../components/layout/Header";
+import { Sidebar } from "../../components/layout/Sidebar";
 
 export function AdminLayout() {
   return (
-    <div className="flex min-h-screen bg-zinc-950 text-white">
-      <aside className="w-64 border-r border-zinc-800">
-        Sidebar placeholder
-      </aside>
-
-      <main className="flex-1 p-6">
-        <Outlet />
-      </main>
+    <div className="min-h-screen flex flex-col bg-zinc-950 text-white">
+      <Header />
+      <div className="flex flex-1">
+        <Sidebar />
+        <main className="flex-1 p-8 overflow-auto">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }
